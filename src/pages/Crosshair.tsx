@@ -119,8 +119,10 @@ export default function Crosshair() {
     };
 
     const handleDeletePreset = async (presetId: string) => {
-        if (!confirm(t('crosshair.confirm.deletePreset'))) return;
         const wasActive = presetId === activePresetId;
+        // Deleting the active preset also strips the crosshair block from
+        // autoexec.cfg, so warn about that rather than only about the preset.
+        if (!confirm(t(wasActive ? 'crosshair.confirm.deleteActivePreset' : 'crosshair.confirm.deletePreset'))) return;
         if (wasActive && gamePath) {
             try {
                 await clearAutoexec(gamePath);
