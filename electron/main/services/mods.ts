@@ -583,12 +583,18 @@ export async function healModFolders(deadlockPath: string): Promise<void> {
     // the priorityMod flag, or the Global surfaces can't see it and the next
     // disable/enable silently demotes it to addons. Also adopts hand-placed
     // VPKs. (Reserved Locker-managed slots never reach this list.)
-    for (const m of mods) {
-        if (!m.enabled || !isPriorityFolderPath(m.path)) continue;
-        if (!getModMetadata(m.metaKey)?.priorityMod) {
-            setModMetadata(m.metaKey, { priorityMod: true });
-            modTrace(`healModFolders: healed missing priorityMod flag on ${m.metaKey}`);
+    // The metadata repairs here are best effort: a failed metadata write (a
+    // transient EPERM from antivirus) must not fail the user's toggle.
+    try {
+        for (const m of mods) {
+            if (!m.enabled || !isPriorityFolderPath(m.path)) continue;
+            if (!getModMetadata(m.metaKey)?.priorityMod) {
+                setModMetadata(m.metaKey, { priorityMod: true });
+                modTrace(`healModFolders: healed missing priorityMod flag on ${m.metaKey}`);
+            }
         }
+    } catch (err) {
+        console.error('[mods] healModFolders: priorityMod repair failed:', err);
     }
 
     // Self-heal users whose metadata.json still carries orphan entries from
@@ -623,7 +629,11 @@ export async function healModFolders(deadlockPath: string): Promise<void> {
     if (!loadSettings().devMode && trustworthyScan) {
         // Prune against ALL scanned files (including managed VPKs) so we don't
         // wipe their metadata before they are filtered out of the list.
-        pruneOrphanMetadata(new Set(mods.map((m) => m.metaKey)), deadlockPath);
+        try {
+            pruneOrphanMetadata(new Set(mods.map((m) => m.metaKey)), deadlockPath);
+        } catch (err) {
+            console.error('[Metadata] Orphan prune failed:', err);
+        }
     }
 }
 

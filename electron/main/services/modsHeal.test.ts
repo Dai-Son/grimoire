@@ -19,6 +19,7 @@ import {
     scanMods,
     scanModsAfterMutations,
 } from './mods';
+import * as metadata from './metadata';
 import { getModMetadata, loadMetadata, saveMetadata } from './metadata';
 import { beginVanillaWindow, endVanillaWindow } from './vanillaWindow';
 import { modTempPath } from './modTemps';
@@ -242,6 +243,25 @@ describe('mutation batches heal first', () => {
         await runExclusiveModMutation(async () => {}, { exemptFromVanillaWindow: true });
 
         expect(getModMetadata('grimoire/pak06_dir.vpk')).toBeUndefined();
+    });
+
+    it('a failed metadata write in the heal does not fail the batch', async () => {
+        await put(grimoire, { 'pak06_dir.vpk': 'global' });
+        const eperm = () => {
+            throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
+        };
+        const stamp = vi.spyOn(metadata, 'setModMetadata').mockImplementation(eperm);
+        const prune = vi.spyOn(metadata, 'pruneOrphanMetadata').mockImplementation(eperm);
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            await expect(runExclusiveModMutation(async () => 'done', { healPath: root })).resolves.toBe('done');
+            expect(stamp).toHaveBeenCalled();
+            expect(prune).toHaveBeenCalled();
+        } finally {
+            stamp.mockRestore();
+            prune.mockRestore();
+            error.mockRestore();
+        }
     });
 
     it('the startup heal runs through the queue behind a batch in progress', async () => {

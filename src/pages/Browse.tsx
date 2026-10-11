@@ -33,7 +33,7 @@ import {
   getGamebananaCategories,
   backfillGameBananaFileId,
   createSnapshot,
-  deleteMod as deleteModApi,
+  deleteReplacedMod,
   assertReplacementSafety,
 } from '../lib/api';
 import { getActiveDeadlockPath, shouldBlurNsfw } from '../lib/appSettings';
@@ -1897,11 +1897,11 @@ export default function Browse() {
           replacementTargets,
           fileId,
         );
-        for (const target of modsByIds(targetIds, installedAfterDownload)) await deleteModApi(target);
+        for (const target of modsByIds(targetIds, installedAfterDownload)) await deleteReplacedMod(target);
       } else {
         if (!isDownloadRequestPending(selectedMod.id, fileId)) return;
         await assertReplacementSafety(installedReplacementIds);
-        for (const target of replacementTargets) await deleteModApi(target);
+        for (const target of replacementTargets) await deleteReplacedMod(target);
       }
       await loadMods({ force: true });
 

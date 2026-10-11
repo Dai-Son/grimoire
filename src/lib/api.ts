@@ -163,6 +163,13 @@ export async function deleteMod(mod: DeleteModEntry): Promise<DeleteModsResult> 
   return warnSkippedDeletes(await withGameRunningWarning(() => window.electronAPI.deleteMod(toDeleteEntry(mod))));
 }
 
+/** Delete the file an update replaces. A skip means the old file changed, so
+ *  the update must stop before it restores state onto the new one. */
+export async function deleteReplacedMod(mod: DeleteModEntry): Promise<void> {
+  const { skipped } = await withGameRunningWarning(() => window.electronAPI.deleteMod(toDeleteEntry(mod)));
+  if (skipped.length > 0) throw new Error(i18n.t('installed.delete.replacedChanged'));
+}
+
 export async function deleteMods(
   mods: readonly DeleteModEntry[],
   onProgress?: (progress: DeleteModsProgress) => void
