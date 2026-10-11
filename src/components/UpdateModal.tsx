@@ -93,6 +93,22 @@ export default function UpdateModal({ onClose }: Props) {
                     closeLabel={t('common.actions.close')}
                 />
 
+                {/* Outside the scrolling body so it stays in view over long release notes. */}
+                {status?.downloading && (
+                    <div className="flex-shrink-0 px-5 pt-4">
+                        <div className="flex justify-between text-xs text-text-secondary mb-1">
+                            <span>{t('updateModal.downloadingUpdate')}</span>
+                            <span className="tabular-nums">{Math.round(status.progress)}%</span>
+                        </div>
+                        <div className="w-full bg-bg-tertiary rounded-full h-1.5 overflow-hidden">
+                            <div
+                                className="bg-accent h-full rounded-full transition-all duration-300 ease-out"
+                                style={{ width: `${status.progress}%` }}
+                            />
+                        </div>
+                    </div>
+                )}
+
                 <ModalBody>
                     {installSource === 'managed' && (
                         <div className="flex items-start gap-3 p-4 rounded-lg bg-bg-tertiary border border-hl/10 mb-4">
@@ -143,21 +159,6 @@ export default function UpdateModal({ onClose }: Props) {
                         <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm mb-4">
                             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                             <span>{updateError}</span>
-                        </div>
-                    )}
-
-                    {status?.downloading && (
-                        <div className="mb-4">
-                            <div className="flex justify-between text-xs text-text-secondary mb-1">
-                                <span>{t('updateModal.downloadingUpdate')}</span>
-                                <span className="tabular-nums">{Math.round(status.progress)}%</span>
-                            </div>
-                            <div className="w-full bg-bg-tertiary rounded-full h-1.5 overflow-hidden">
-                                <div
-                                    className="bg-accent h-full rounded-full transition-all duration-300 ease-out"
-                                    style={{ width: `${status.progress}%` }}
-                                />
-                            </div>
                         </div>
                     )}
 
