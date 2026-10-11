@@ -123,16 +123,6 @@ export default function PrivacySection() {
 
           <div className="h-px bg-hl/5" />
 
-          <Toggle
-            checked={settings?.autoCheckModUpdates ?? true}
-            onChange={(checked) => settings && saveSettings({ ...settings, autoCheckModUpdates: checked })}
-            disabled={!settings}
-            label={<Tx k="settings.privacy.autoCheckModUpdates" fallback="Check installed mods for updates" />}
-            description={<Tx k="settings.privacy.autoCheckModUpdatesDescription" fallback="The Installed page asks GameBanana for each mod's current files, so GameBanana can see which mods you have. Turn this off and update badges stop showing." />}
-          />
-
-          <div className="h-px bg-hl/5" />
-
           <div>
             <Toggle
               checked={settings?.contributeMatchSalts ?? false}

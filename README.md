@@ -86,7 +86,7 @@ Requires Deadlock installed via Steam.
 - Stats: MMR, match history, and hero stats from deadlock-api.com
 - Crosshair designer with live preview
 
-No telemetry. On its own, Grimoire only talks to GitHub (to check for app updates) and GameBanana (the mod catalog, plus updates for mods you installed), and you can turn both update checks off. Everything the app can send is listed on the [privacy page](https://grimoiremods.com/docs/privacy).
+No telemetry. On its own, Grimoire only talks to GitHub (to check for app updates, which you can turn off) and GameBanana (the mod catalog, plus update checks and thumbnails for mods you installed). Everything the app can send is listed on the [privacy page](https://grimoiremods.com/docs/privacy).
 
 ## Screenshots
 
