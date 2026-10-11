@@ -2442,7 +2442,8 @@
       "reportIssuePlaceholder": "What's the issue? (optional)",
       "submit": "Submit",
       "reportSubmitted": "Report submitted.",
-      "report": "Report"
+      "report": "Report",
+      "autoexecCount": "{{count}} autoexec"
     },
     "picker": {
       "publishAProfile": "Publish a profile",
@@ -3064,7 +3065,10 @@
   "discover": {
     "header": {
       "description": "Mod profiles published by other Grimoire users.",
-      "signInHint": "Sign in to like and publish; importing works without an account."
+      "signInHint": "Sign in to like and publish; importing works without an account.",
+      "signedInAs": "Signed in as {{name}}",
+      "profileCount_one": "{{count}} profile",
+      "profileCount_other": "{{count}} profiles"
     },
     "tabs": {
       "top": "Top",
@@ -3089,7 +3093,13 @@
       "description": "Be the first to publish: open Profiles, pick one, and click Publish to Discover."
     },
     "card": {
-      "featured": "Featured"
+      "featured": "Featured",
+      "nsfw": "NSFW",
+      "like": "Like",
+      "unlike": "Unlike",
+      "likeProfile": "Like profile",
+      "unlikeProfile": "Unlike profile",
+      "signInToLike": "Sign in to like"
     },
     "pagination": {
       "loadingMore": "Loading more...",

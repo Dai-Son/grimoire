@@ -531,7 +531,7 @@ export async function launchModded({
             onRestoreComplete?.(result);
             if (result.failed.length > 0) {
                 throw new Error(
-                    `Couldn't restore ${result.failed.length} mod(s) — make sure Deadlock is fully closed and try again.`
+                    `Couldn't restore ${result.failed.length} mod(s). Make sure Deadlock is fully closed and try again.`
                 );
             }
         }
