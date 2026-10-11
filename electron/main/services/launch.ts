@@ -18,7 +18,7 @@ import {
     PRIORITY_FOLDER_NAME,
 } from './deadlock';
 import { loadSettings } from './settings';
-import { writeLaunchOptions, readLaunchOptions, isSteamRunning } from './launchOptions';
+import { writeLaunchOptions, readLaunchOptions, isSteamRunning, resolveLaunchOptionsWrite } from './launchOptions';
 import { findBottleForPath } from './steamRoots';
 import { launchAppInBottle } from './bottleLaunch';
 
@@ -477,14 +477,9 @@ async function syncLaunchOptionsToSteam(): Promise<void> {
         // avoids a needless backup + rewrite of a multi-megabyte file on
         // every launch.
         const current = await readLaunchOptions();
-        if (current && current.currentValue === desired) {
-            return;
-        }
-        if (!current && !desired) {
-            // Nothing set and nothing to set; skip even creating the entry.
-            return;
-        }
-        await writeLaunchOptions(desired);
+        const toWrite = resolveLaunchOptionsWrite(desired, settings.steamLaunchOptionsManaged, current?.currentValue ?? null);
+        if (toWrite === null) return;
+        await writeLaunchOptions(toWrite);
     } catch (err) {
         console.warn('[launch] Failed to sync launch options to Steam:', err);
     }

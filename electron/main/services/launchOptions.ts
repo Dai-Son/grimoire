@@ -394,6 +394,17 @@ function locateAppBlock(text: string, sourcePath: string, appId: string): AppBlo
 }
 
 /**
+ * What to write into Steam, or null to leave it alone. An empty desired value
+ * only clears Steam's options when the user explicitly saved it (`managed`);
+ * otherwise it is the unset default and Steam's own value wins.
+ */
+export function resolveLaunchOptionsWrite(desired: string, managed: boolean, onDisk: string | null): string | null {
+    if (desired === '' && !managed) return null;
+    if ((onDisk ?? '') === desired) return null;
+    return desired;
+}
+
+/**
  * Public: read the currently-stored launch options for Deadlock. Returns
  * null when the file or path doesn't exist (e.g. fresh Steam install). Does
  * NOT throw on missing structure — those are normal "no options set" states.

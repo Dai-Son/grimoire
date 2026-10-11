@@ -1130,6 +1130,10 @@ export interface AppSettings {
   autoEnableDownloads: boolean;
   /** Args written to Steam's localconfig.vdf for Deadlock just before launch. */
   steamLaunchOptions: string;
+  /** Set once the user saves the Launch Options card. Until then (or while the
+   *  string is non-empty) an empty `steamLaunchOptions` is just the default and
+   *  must never overwrite what the user set in Steam themselves. */
+  steamLaunchOptionsManaged: boolean;
   /** Currently active profile. */
   activeProfileId: string | null;
   /** Ask for confirmation before "Update" overwrites a profile with the current
