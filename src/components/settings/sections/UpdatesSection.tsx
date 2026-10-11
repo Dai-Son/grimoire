@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import { useTranslation, Trans } from 'react-i18next';
 import { ArrowDownCircle, Download, RefreshCw, Sparkles } from 'lucide-react';
 import DOMPurify from 'dompurify';
-import { Badge, Button, Card, ModalHeader, SegmentedControl } from '../../common/ui';
+import { Badge, Button, Card, ModalHeader, SegmentedControl, Toggle } from '../../common/ui';
 import { Modal, ModalBody, ModalFooter } from '../../common/Modal';
 import Tx from '../../translation/Tx';
 import { useAppStore } from '../../../stores/appStore';
@@ -37,6 +37,7 @@ function ReleaseVersionLink({ version, className = '' }: { version?: string | nu
 export default function UpdatesSection() {
   const { t } = useTranslation();
   const settings = useAppStore(state => state.settings);
+  const saveSettings = useAppStore(state => state.saveSettings);
   const channel = settings?.updateChannel ?? 'stable';
   const [changingChannel, setChangingChannel] = useState(false);
   const [channelError, setChannelError] = useState<string | null>(null);
@@ -142,6 +143,15 @@ export default function UpdatesSection() {
               )}
               {channelError && <p role="alert" className="text-xs text-state-danger">{channelError}</p>}
             </div>
+          )}
+          {installSource !== 'managed' && (
+            <Toggle
+              checked={settings?.autoCheckAppUpdates ?? true}
+              onChange={checked => { if (settings) void saveSettings({ ...settings, autoCheckAppUpdates: checked }); }}
+              disabled={!settings}
+              label={<Tx k="settings.updates.autoCheck" fallback="Check for updates automatically" />}
+              description={<Tx k="settings.updates.autoCheckDescription" fallback="Asks GitHub for the newest release each time Grimoire starts. Check for Updates still works when this is off." />}
+            />
           )}
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">

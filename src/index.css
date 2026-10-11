@@ -8,8 +8,14 @@
      z-60  surfaces that stack above a modal: toasts, ModDetailsModal
      z-80  context menus and popovers (always top) */
 
-/* Gothic Font for Grimoire branding - loaded via Google Fonts in index.html */
-/* Grenze Gotisch: https://fonts.google.com/specimen/Grenze+Gotisch */
+/* Grimoire wordmark. Bundled (SIL OFL) so the window never asks Google Fonts. */
+@font-face {
+  font-family: 'IM Fell English';
+  src: url('/fonts/im-fell-english.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 
 /* Deadlock Fonts */
 /* Radiance ships with a top-heavy line-box (ascent metric > descent), which

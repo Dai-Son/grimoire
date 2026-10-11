@@ -2944,7 +2944,13 @@ export default function Installed() {
   // either a confident successor exists or the row was deleted (see
   // classifyModFiles). An archived file with no successor is a retired addon
   // or a legacy alternate, not an update, so it is never flagged.
+  const autoCheckModUpdates = settings?.autoCheckModUpdates;
   useEffect(() => {
+    if (!autoCheckModUpdates) {
+      setUpdatesAvailable(new Set());
+      setMergedSourceUpdates(new Map());
+      return;
+    }
     let cancelled = false;
     const checkUpdates = async () => {
       // Absorbed merge sources never enter `targets`: runUpdate would rewrite
@@ -3019,7 +3025,7 @@ export default function Installed() {
     // `visibleMods` is derived from `mods` and changes only when `mods`
     // does; listing it directly would re-fire on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mods, updateCheckRevision]);
+  }, [mods, updateCheckRevision, autoCheckModUpdates]);
 
   // Group variants sharing a GB mod id under a single card. Singletons and
   // custom imports (no GB id) keep their old card behavior. Absorbed merge

@@ -86,7 +86,7 @@ Requires Deadlock installed via Steam.
 - Stats: MMR, match history, and hero stats from deadlock-api.com
 - Crosshair designer with live preview
 
-Offline-first and no telemetry: a fresh install phones home for nothing.
+No telemetry. On its own, Grimoire only talks to GitHub (to check for app updates) and GameBanana (the mod catalog, plus updates for mods you installed), and you can turn both update checks off. Everything the app can send is listed on the [privacy page](https://grimoiremods.com/docs/privacy).
 
 ## Screenshots
 
@@ -144,6 +144,17 @@ Windows installers are not yet code-signed, so SmartScreen will show an
 "Unknown Publisher" warning on first run: click **More info → Run
 anyway** to proceed. Free Authenticode signing through the SignPath
 Foundation OSS program is being pursued.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+- Committers and reviewers: [Slush97](https://github.com/Slush97)
+- Approvers: [Slush97](https://github.com/Slush97)
+
+The full policy, including what gets signed and how, is at
+[grimoiremods.com/code-signing](https://grimoiremods.com/code-signing). Privacy:
+[what Grimoire sends and to whom](https://grimoiremods.com/docs/privacy).
 
 ## License
 

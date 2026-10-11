@@ -863,7 +863,9 @@
       "noReleaseNotes": "No release notes available.",
       "manual": "Updates have to be downloaded manually.",
       "manualUnsignedExplanation": "The macOS build is ad-hoc signed rather than notarized, so macOS will not let Grimoire replace itself in place. Grimoire can still tell you when a new version is out.",
-      "manualDownloadLink": "Download the latest release"
+      "manualDownloadLink": "Download the latest release",
+      "autoCheck": "Check for updates automatically",
+      "autoCheckDescription": "Asks GitHub for the newest release each time Grimoire starts. Check for Updates still works when this is off."
     },
     "appearance": {
       "accentNamed": "Use {{name}} accent color",
@@ -1067,7 +1069,10 @@
     "privacy": {
       "nsfwContent": "NSFW content",
       "nsfwContentDescription": "Applies across Grimoire. Blur covers thumbnails; Hide also removes NSFW mods from Browse results.",
-      "noHiddenCreators": "No creators are hidden right now."
+      "noHiddenCreators": "No creators are hidden right now.",
+      "autoCheckModUpdates": "Check installed mods for updates",
+      "autoCheckModUpdatesDescription": "The Installed page asks GameBanana for each mod's current files, so GameBanana can see which mods you have. Turn this off and update badges stop showing.",
+      "whatGrimoireSends": "Everything Grimoire can send, and who receives it, is listed on the <link>privacy page</link>."
     }
   },
   "crosshair": {

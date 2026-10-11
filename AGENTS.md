@@ -37,7 +37,7 @@ Heavy VPK/model/texture/sound work shells out to the bundled `vpkmerge` CLI (`re
 ## Hard rules
 
 - **No em-dashes**, anywhere: UI strings, comments, docs, commit messages. Use a colon, period or parens.
-- **No telemetry.** Nothing phones home on a fresh install: no analytics, usage pings or heartbeats. Network calls only happen for features the user invoked or opted into.
+- **No telemetry.** No analytics, usage pings or heartbeats. The only automatic requests are the app update check (GitHub), the GameBanana catalog refresh and the Installed mod update check, and both update checks have a setting. Everything else waits for a click or an opt-in. A new automatic request needs a setting and an entry on the privacy guide page (`docs/guide/privacy.md`, published at grimoiremods.com/docs/privacy): SignPath's signing terms require both.
 - **Main process owns secrets.** API keys and the social session token (stored via `safeStorage`) never reach the renderer. The main process attaches auth headers itself.
 - **Wire-format types come from `@grimoire/social-types`** (`../grimoire-social/packages/social-types/`). Never redeclare them here. Social routes are `/v1/*`, additive only; breaking changes go to `/v2/`.
 - **External APIs go through a rate limiter** in `electron/main/services/rateLimiter.ts` (GameBanana, deadlock-api, Steam community, GitHub). New integrations reuse that pattern.
