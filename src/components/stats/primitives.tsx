@@ -145,7 +145,7 @@ interface MatchRowProps {
     durationS: number
     startTime?: number
     netWorth?: number
-    damage?: number
+    damage?: number | null
     compact?: boolean
 }
 
