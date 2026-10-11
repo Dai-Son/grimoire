@@ -116,6 +116,7 @@ import {
     type ForgeInstallRequest,
 } from './services/forgeBridge';
 import { installForgeVpk } from './services/download';
+import { healModFoldersExclusive, runExclusiveModMutation } from './services/mods';
 import { backfillMissingMetadataHashes, recoverPrunedIdentities } from './services/metadata';
 import { backfillImprintedFlags } from './services/imprintMods';
 import { destroyDiscordRpc } from './services/discordRpc';
@@ -180,12 +181,18 @@ async function handleForgeInstall(request: ForgeInstallRequest): Promise<void> {
     );
 }
 
-async function backfillStartupMetadataHashes(): Promise<void> {
+async function runStartupMetadataMaintenance(): Promise<void> {
     const deadlockPath = getConfiguredDeadlockPath();
     if (!deadlockPath) return;
 
     try {
-        const updated = await backfillMissingMetadataHashes(deadlockPath);
+        await healModFoldersExclusive(deadlockPath);
+    } catch (error) {
+        console.warn('[mods] Startup heal failed:', error);
+    }
+
+    try {
+        const updated = await backfillMissingMetadataHashes(deadlockPath, (apply) => runExclusiveModMutation(apply));
         if (updated > 0) {
             console.log(`[Metadata] Backfilled SHA-256 for ${updated} mod metadata entr${updated === 1 ? 'y' : 'ies'}`);
         }
@@ -587,7 +594,7 @@ if (!gotTheLock) {
         // or grimoire crashed while the user was playing vanilla), then fill in
         // SHA-256 metadata for older entries that were written before hashing.
         void runStartupRecovery().finally(() => {
-            void backfillStartupMetadataHashes();
+            void runStartupMetadataMaintenance();
         });
 
         // Initialize auto-updater (production only). Skip the background check

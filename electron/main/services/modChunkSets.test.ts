@@ -9,7 +9,7 @@ vi.mock('electron', () => ({ app: { getPath: () => h.userData } }));
 vi.mock('./launch', () => ({ isDeadlockRunning: async () => h.running, readStash: async () => null }));
 vi.mock('./modSafety', () => ({ assertVpkSafety: h.assertVpkSafety, moveSafetySnapshot: vi.fn(), forgetSafetySnapshot: vi.fn() }));
 
-import { deleteMod, deleteMods, enableMod, installEnabledVpk, reorderMods, scanMods, setModPriority, swapModPriority } from './mods';
+import { deleteMod, deleteMods, enableMod, healModFolders, installEnabledVpk, reorderMods, scanMods, setModPriority, swapModPriority } from './mods';
 import { getModMetadata, saveMetadata, setModMetadata } from './metadata';
 import { clearLoadedGameMods } from './gameSessionMods';
 import type { DeleteModsProgress } from '../../../src/types/mod';
@@ -96,7 +96,7 @@ describe('chunked mods move and delete as one set', () => {
         await put(addons, { 'pak05_dir.vpk': 'enabled', 'pak06_dir.vpk': 'same', 'pak06_000.vpk': 'same0' });
         await put(disabled, { 'pak05_dir.vpk': 'other', 'pak05_000.vpk': 'other0', 'pak06_dir.vpk': 'same', 'pak06_000.vpk': 'same0' });
 
-        await scanMods(root);
+        await healModFolders(root);
 
         const parked = await contents(disabled);
         const [dir] = Object.keys(parked).filter((name) => name.endsWith('_dir.vpk'));

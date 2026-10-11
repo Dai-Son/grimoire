@@ -888,7 +888,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Delete a mod.
   // "Mod not found" is treated as idempotent success: the file is already
-  // gone (most often because scanMods' reconcile pass renamed a colliding
+  // gone (most often because healModFolders renamed a colliding
   // pakNN file between the renderer's last load and this delete), so the
   // desired end state is already reached. Surfacing it as modsError would
   // replace the whole Installed page with the full-page error screen,

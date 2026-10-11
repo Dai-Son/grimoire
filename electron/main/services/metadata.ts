@@ -304,29 +304,42 @@ export async function setModMetadataWithHash(
  * Backfill SHA-256 values for metadata written before hashes existed.
  * This runs without renaming/moving files; entries whose VPK no longer exists
  * are skipped and can still be pruned by the normal metadata cleanup path.
+ *
+ * Hashing a large VPK takes long enough that holding the mod-mutation lock for
+ * it would stall every toggle, so the hashes are computed first, unlocked. They
+ * are then written inside `runLocked` (a short step that re-reads the sidecar),
+ * and only for files that are still the ones that were hashed: same key, size
+ * and mtime. A row another writer touched while hashing is left alone.
  */
-export async function backfillMissingMetadataHashes(deadlockPath: string): Promise<number> {
+export async function backfillMissingMetadataHashes(
+    deadlockPath: string,
+    runLocked: (apply: () => Promise<number>) => Promise<number>
+): Promise<number> {
     const metadata = loadMetadata();
     const filesByKey = await collectInstalledVpkPaths(deadlockPath);
     const metadataKeysByLower = new Map(
         Object.keys(metadata).map((key) => [key.toLowerCase(), key])
     );
-    let updated = 0;
+    const hashed: Array<{ key: string; lowerKey: string; filePath: string; size: number; mtimeMs: number; sha256: string }> = [];
+
+    const hashFile = async (key: string, lowerKey: string, filePath: string): Promise<void> => {
+        try {
+            const stat = statSync(filePath);
+            // Canonical (embed-aware) identity: an imprinted file backfills its
+            // embedded original hash, never the post-imprint live bytes.
+            const { sha256 } = await resolveVpkIdentity(filePath);
+            hashed.push({ key, lowerKey, filePath, size: stat.size, mtimeMs: stat.mtimeMs, sha256 });
+        } catch (error) {
+            console.warn(`[Metadata] Failed to backfill SHA-256 for ${key}:`, error);
+        }
+    };
 
     // First repair pre-hash metadata entries that still have a VPK on disk.
     for (const [key, data] of Object.entries(metadata)) {
         if (isValidSha256(data.sha256)) continue;
         const filePath = filesByKey.get(key.toLowerCase());
         if (!filePath) continue;
-
-        try {
-            // Canonical (embed-aware) identity: an imprinted file backfills its
-            // embedded original hash, never the post-imprint live bytes.
-            data.sha256 = (await resolveVpkIdentity(filePath)).sha256;
-            updated++;
-        } catch (error) {
-            console.warn(`[Metadata] Failed to backfill SHA-256 for ${key}:`, error);
-        }
+        await hashFile(key, key.toLowerCase(), filePath);
     }
 
     // A VPK dropped straight into addons has no sidecar entry at all. Give it
@@ -335,21 +348,35 @@ export async function backfillMissingMetadataHashes(deadlockPath: string): Promi
     // callers classify on gameBananaId/modName, not metadata-row existence.
     for (const [lowerKey, filePath] of filesByKey) {
         if (metadataKeysByLower.has(lowerKey)) continue;
-        const key = metaKeyFor(filePath);
-        try {
-            metadata[key] = { sha256: (await resolveVpkIdentity(filePath)).sha256 };
-            metadataKeysByLower.set(lowerKey, key);
+        await hashFile(metaKeyFor(filePath), lowerKey, filePath);
+    }
+
+    if (hashed.length === 0) return 0;
+
+    return runLocked(async () => {
+        const current = await collectInstalledVpkPaths(deadlockPath);
+        const latest = loadMetadata();
+        const latestKeysByLower = new Map(Object.keys(latest).map((key) => [key.toLowerCase(), key]));
+        let updated = 0;
+        for (const entry of hashed) {
+            if (current.get(entry.lowerKey) !== entry.filePath) continue;
+            const stat = statSync(entry.filePath, { throwIfNoEntry: false });
+            if (!stat || stat.size !== entry.size || stat.mtimeMs !== entry.mtimeMs) continue;
+
+            const existingKey = latestKeysByLower.get(entry.lowerKey);
+            if (metadataKeysByLower.has(entry.lowerKey)) {
+                if (!existingKey || isValidSha256(latest[existingKey].sha256)) continue;
+                latest[existingKey].sha256 = entry.sha256;
+            } else {
+                if (existingKey) continue;
+                latest[entry.key] = { sha256: entry.sha256 };
+                latestKeysByLower.set(entry.lowerKey, entry.key);
+            }
             updated++;
-        } catch (error) {
-            console.warn(`[Metadata] Failed to create SHA-256 metadata for ${key}:`, error);
         }
-    }
-
-    if (updated > 0) {
-        saveMetadata(metadata);
-    }
-
-    return updated;
+        if (updated > 0) saveMetadata(latest);
+        return updated;
+    });
 }
 
 // Map every installed user VPK to its absolute path, keyed by metaKey

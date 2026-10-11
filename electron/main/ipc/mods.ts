@@ -9,6 +9,7 @@ import { tmpdir } from 'os';
 import { loadSettings, saveSettings, getActiveDeadlockPath } from '../services/settings';
 import {
     scanMods,
+    scanModsAfterMutations,
     enableMod,
     enableModUnlocked,
     disableMod,
@@ -24,15 +25,14 @@ import {
     runExclusiveModMutation,
     type Mod,
 } from '../services/mods';
-import { metaKeyFor, isValidDeadlockPath } from '../services/deadlock';
-import { getModMetadata, setModMetadata, setModMetadataWithHash, removeModMetadata, pruneOrphanMetadata, type ModMetadata } from '../services/metadata';
+import { metaKeyFor } from '../services/deadlock';
+import { getModMetadata, setModMetadata, setModMetadataWithHash, removeModMetadata, type ModMetadata } from '../services/metadata';
 import { inferHeroFromTitle } from '@grimoire/social-types/heroes';
 import { inferHeroFromVpk, classifyGlobalModFromVpk, GLOBAL_CLASSIFIER_VERSION, parseVpkDirectory, parseVpkDirectoriesAsync } from '../services/vpk';
 import { notifyModChanges } from '../services/modChangeObservation';
 import { classifyAbilitySoundsFromVpk } from '../services/abilitySounds';
 import { migrateIgnoredConflictKeysForMods } from '../services/conflicts';
 import { isLockerManaged } from '../services/lockerVpk';
-import { readStash } from '../services/launch';
 import { retargetProfileModSha } from '../services/profiles';
 import {
     detectUnknownModCacheMatches,
@@ -83,10 +83,6 @@ import type { VpkExportResult, HeroSoundSwapRequest } from '../../../src/types/f
 import type { AbilitySoundClassification, AddMergeSourcesResult, MergeSourceReplacement, ReplaceMergeSourcesResult, ApplyUnknownCustomModArgs, ApplyUnknownModMatchArgs, AssociateUnknownModArgs, EditLocalModArgs, GlobalModType, LockerHeroSource, MergeModsArgs, Mod as WireMod, SoulContainerImportInfo, SoundSwapInfo, UrnImportInfo, UnmergeModResult, ExtractMergeSourceResult, UnknownModFileList, ImprintPreflightResult, ImprintDetails, PeekImprintResult } from '../../../src/types/mod';
 
 const unknownDetectionControllers = new Map<string, AbortController>();
-
-// Last path we warned about skipping the orphan prune for, so the warning lands
-// once per path instead of once per get-mods.
-let lastUntrustedPathWarned: string | null = null;
 
 interface UnknownCacheBulkRequest {
     modId: string;
@@ -319,45 +315,8 @@ ipcMain.handle('get-mods', async (): Promise<Mod[]> => {
     if (!deadlockPath) {
         return [];
     }
-    const mods = await scanMods(deadlockPath);
-    // Self-heal users whose metadata.json still carries orphan entries from
-    // pre-fix deletes (issue #26). Skip while dev mode is active: the dev
-    // sandbox starts empty, and pruning against it would wipe every real
-    // install's name/thumbnail/gameBananaId from the global metadata sidecar.
+    const mods = await scanModsAfterMutations(deadlockPath);
     const settings = loadSettings();
-    // Same reasoning, for the real install: an empty scan is only evidence that
-    // the user has no mods when it came from a Deadlock folder that is actually
-    // there. A configured path can stop resolving (Steam mid-update after a
-    // reboot, a moved library, a drive that has not come up yet), and the scan
-    // roots are created on demand by getAddonsPath/getGrimoirePath, so the scan
-    // silently fabricates an empty addons tree and reports zero mods rather than
-    // failing. Pruning against that deletes every name, id, thumbnail and hero
-    // assignment the user has (reported 2026-08-14: 26 mods reduced to
-    // "Pak01".."Pak31" after a PC restart). gameinfo.gi is the discriminator:
-    // Steam ships it and nothing on the install path writes one.
-    //
-    // The devMode check stays load-bearing rather than redundant: setupDevMode
-    // (services/dev.ts) writes an empty gameinfo.gi into the sandbox, so the
-    // sandbox passes this test and would otherwise prune the real sidecar
-    // against a tree that has never held a mod.
-    const trustworthyScan = isValidDeadlockPath(deadlockPath);
-    if (!trustworthyScan && deadlockPath !== lastUntrustedPathWarned) {
-        // Once per path, not once per get-mods: this handler runs on every visit
-        // to Installed, every toggle and every reorder, and a user whose
-        // gameinfo.gi is genuinely missing (antivirus, partial verify) would
-        // otherwise drown their own diagnostic report in this line.
-        lastUntrustedPathWarned = deadlockPath;
-        console.warn(
-            `[Metadata] Skipping orphan prune: ${deadlockPath} has no game/citadel/gameinfo.gi, so this scan (${mods.length} VPKs) is not evidence of what is installed.`
-        );
-    }
-    // A vanilla session has user mods parked outside every scan root, so the scan
-    // is not evidence of what is installed until the restore.
-    if (!settings.devMode && trustworthyScan && !(await readStash())) {
-        // Prune against ALL scanned files (including managed VPKs) so we don't
-        // wipe their metadata before filtering them out of the list below.
-        pruneOrphanMetadata(new Set(mods.map((m) => m.metaKey)), deadlockPath);
-    }
     // Hide Grimoire-managed Locker VPKs (hero cards + ability sounds). They're
     // driven solely through the Locker pickers and are auto-enabled + pinned to
     // the front of the load order (services/lockerVpk.ts), so surfacing them in
@@ -817,7 +776,7 @@ ipcMain.handle(
             }
 
             return { updated: enrichMod(target), refresh: refreshMods };
-        });
+        }, { healPath: deadlockPath });
 
         for (const mod of refresh) {
             await refreshEmbedAfterMetadataChange(deadlockPath, mod.id, mod.metaKey, mod.path);
@@ -923,7 +882,7 @@ ipcMain.handle(
             // exactly the state these writes were made against; a concurrent
             // toggle can no longer rename a slot between commit and scan.
             return { groupId: plan.groupId, renamed: renamedMods, snapshot: await scanMods(deadlockPath) };
-        });
+        }, { healPath: deadlockPath });
 
         for (const mod of renamed) {
             await refreshEmbedAfterMetadataChange(deadlockPath, mod.id, mod.metaKey, mod.path);
@@ -973,7 +932,7 @@ ipcMain.handle(
                 changedMods.push(mod);
             }
             return changedMods;
-        });
+        }, { healPath: deadlockPath });
 
         // The group name is part of the imprint metadata. Refresh only after
         // releasing the non-reentrant mutation lock, matching local renames.
@@ -1695,7 +1654,8 @@ ipcMain.handle(
                         resolvedItem,
                         thumbnailFetchTargets,
                         !!item.localGroupId?.trim()
-                    )
+                    ),
+                    { healPath: deadlockPath }
                 );
                 results.push({ vpkPath: item.vpkPath, ok: true, imported, localGroupId, needsReview });
                 report({ index, total, vpkPath: item.vpkPath, phase: 'done', imported });
