@@ -85,7 +85,7 @@ export default function PrivacySection() {
           <Trans
             i18nKey="settings.privacy.whatGrimoireSends"
             components={{
-              link: (
+              privacyLink: (
                 <a
                   href={PRIVACY_PAGE_URL}
                   target="_blank"

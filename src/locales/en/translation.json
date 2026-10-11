@@ -1072,7 +1072,7 @@
       "noHiddenCreators": "No creators are hidden right now.",
       "autoCheckModUpdates": "Check installed mods for updates",
       "autoCheckModUpdatesDescription": "The Installed page asks GameBanana for each mod's current files, so GameBanana can see which mods you have. Turn this off and update badges stop showing.",
-      "whatGrimoireSends": "Everything Grimoire can send, and who receives it, is listed on the <link>privacy page</link>."
+      "whatGrimoireSends": "Everything Grimoire can send, and who receives it, is listed on the <privacyLink>privacy page</privacyLink>."
     }
   },
   "crosshair": {
