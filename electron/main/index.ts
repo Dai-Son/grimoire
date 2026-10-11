@@ -487,6 +487,12 @@ if (!gotTheLock) {
         // Set app user model id for windows
         electronApp.setAppUserModelId('com.grimoire.modmanager');
 
+        // On Windows and Linux, Chromium downloads Hunspell dictionaries from
+        // Google's CDN. Only an empty language list stops it: on Electron 35,
+        // setSpellCheckerEnabled(false) and webPreferences.spellcheck=false
+        // both still download. A no-op on macOS, which uses the OS checker.
+        session.defaultSession.setSpellCheckerLanguages([]);
+
         // Serve per-mod soul-container GLBs from the user's library.
         registerSoulModelProtocol();
 
@@ -514,8 +520,8 @@ if (!gotTheLock) {
                         'Content-Security-Policy': [
                             "default-src 'self'; " +
                             "script-src 'self'; " +
-                            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-                            "font-src 'self' https://fonts.gstatic.com; " +
+                            "style-src 'self' 'unsafe-inline'; " +
+                            "font-src 'self'; " +
                             // `grimoire-foundry:` serves Foundry's cached texture
                             // thumbnails, rendered as <img>, so they must be allowed
                             // here or the browse grid is blank under the prod CSP.
@@ -582,8 +588,9 @@ if (!gotTheLock) {
         }
 
         // Restore a previously-persisted social session (no-op if none, or if
-        // we're on Linux without a real secret store — ADR-011).
-        void hydrateSocialSession();
+        // we're on Linux without a real secret store: ADR-011). Its check
+        // calls the Social server, so it waits until Social is turned on.
+        if (loadSettings().experimentalSocial) void hydrateSocialSession();
 
         // Resume the opt-in match-salt contributor across restarts.
         if (loadSettings().contributeMatchSalts) {
@@ -601,7 +608,7 @@ if (!gotTheLock) {
         // for apt/AUR/snap installs since the package manager owns updates.
         if (!is.dev && mainWindow) {
             initUpdater(mainWindow);
-            if (getInstallSource() !== 'managed') {
+            if (getInstallSource() !== 'managed' && loadSettings().autoCheckAppUpdates) {
                 setTimeout(() => {
                     checkForUpdates().catch((err) => {
                         console.log('[Updater] Auto-check failed:', err.message);

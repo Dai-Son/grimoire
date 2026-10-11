@@ -10,6 +10,7 @@ export type { AppSettings };
 
 const DEFAULT_SETTINGS: AppSettings = {
     updateChannel: 'stable',
+    autoCheckAppUpdates: true,
     deadlockPath: null,
     devMode: false,
     devDeadlockPath: null,

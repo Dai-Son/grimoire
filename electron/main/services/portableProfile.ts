@@ -6,6 +6,7 @@ import { getModMetadata } from './metadata';
 import { isLockerManaged } from './lockerVpk';
 import { fetchModDetails } from './gamebanana';
 import { normalizeCrosshairSettings } from '../../../src/lib/crosshair';
+import { isGameBananaImageUrl } from '../utils/gamebananaImage';
 import type {
     PortableProfile,
     PortableModEntry,
@@ -320,6 +321,10 @@ function validatePortable(obj: unknown): PortableProfile {
         if (!m.ref || typeof m.ref !== 'object') throw new Error(`mods[${i}].ref missing`);
         if (typeof m.enabled !== 'boolean') throw new Error(`mods[${i}].enabled missing`);
         if (typeof m.priority !== 'number') throw new Error(`mods[${i}].priority missing`);
+        const hint = m.hint as Record<string, unknown> | undefined;
+        if (hint && typeof hint === 'object' && !isGameBananaImageUrl(hint.thumbnailUrl)) {
+            delete hint.thumbnailUrl;
+        }
 
         if (m.source === 'gamebanana') {
             const ref = m.ref as Record<string, unknown>;

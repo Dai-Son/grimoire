@@ -1104,6 +1104,9 @@ export interface HiddenMod {
 
 export interface AppSettings {
   updateChannel: UpdateChannel;
+  /** Ask GitHub for a newer Grimoire release on launch. Settings > Updates
+   *  can still check by hand when this is off. */
+  autoCheckAppUpdates: boolean;
   deadlockPath: string | null;
   devMode: boolean;
   devDeadlockPath: string | null;
