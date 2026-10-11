@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     autoDisableSiblingVariants: true,
     autoEnableDownloads: false,
     steamLaunchOptions: '',
+    steamLaunchOptionsManaged: false,
     activeProfileId: null,
     confirmProfileUpdate: true,
     experimentalStats: false,

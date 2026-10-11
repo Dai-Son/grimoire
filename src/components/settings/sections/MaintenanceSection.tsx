@@ -171,7 +171,7 @@ export default function MaintenanceSection() {
               <p className="text-xs text-text-secondary mt-1">
                 <Tx
                   k="settings.maintenance.cleanupDescription"
-                  fallback="Remove leftover archive downloads (zip, 7z)."
+                  fallback="Remove leftover archive downloads (zip, 7z, rar)."
                 />
               </p>
               {cleanupResult && (

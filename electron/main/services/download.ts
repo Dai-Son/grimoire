@@ -1449,7 +1449,7 @@ async function executeOneClickDownload(
                     modId,
                     fileId,
                     errorCode: 'CANCELLED_BY_USER',
-                    message: 'Install cancelled — archive contained suspicious files.',
+                    message: 'Install cancelled: archive contained suspicious files.',
                 });
                 throw new Error('User cancelled install due to suspicious files');
             }

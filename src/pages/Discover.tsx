@@ -249,7 +249,7 @@ export default function Discover() {
       </Button>
       <div
         className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-bg-secondary border border-hl/10"
-        title={`Signed in as ${user.display_name}`}
+        title={t('discover.header.signedInAs', { name: user.display_name })}
       >
         {user.avatar_url ? (
           <img
@@ -345,7 +345,7 @@ export default function Discover() {
           </div>
           {tab !== 'mine' && data && (
             <span className="text-xs text-text-tertiary tabular-nums pr-1">
-              {data.total} {data.total === 1 ? 'profile' : 'profiles'}
+              {t('discover.header.profileCount', { count: data.total })}
             </span>
           )}
         </div>
@@ -532,7 +532,7 @@ export default function Discover() {
                         )}
                         {p.has_nsfw && (
                           <span className="inline-flex items-center text-2xs font-medium px-1.5 py-0.5 rounded-sm bg-black/60 backdrop-blur-sm text-yellow-300 border border-yellow-300/30">
-                            NSFW
+                            {t('discover.card.nsfw')}
                           </span>
                         )}
                       </div>
@@ -578,7 +578,7 @@ export default function Discover() {
                           {p.owner.display_name}
                         </div>
                         <div className="text-xs text-text-tertiary mt-0.5">
-                          {formatRelativeDate(isoFromUnix(p.created_at))} · {p.mod_count} {p.mod_count === 1 ? 'mod' : 'mods'}
+                          {formatRelativeDate(isoFromUnix(p.created_at))} · {t('profiles.mods.count', { count: p.mod_count })}
                         </div>
                       </div>
                       <button
@@ -592,8 +592,8 @@ export default function Discover() {
                               : 'text-text-secondary hover:text-state-danger hover:bg-hl/5 cursor-pointer'
                             : 'text-text-tertiary cursor-help hover:bg-hl/5'
                         } disabled:opacity-50`}
-                        title={signedIn ? (liked ? 'Unlike' : 'Like') : 'Sign in to like'}
-                        aria-label={signedIn ? (liked ? 'Unlike profile' : 'Like profile') : 'Sign in to like'}
+                        title={signedIn ? (liked ? t('discover.card.unlike') : t('discover.card.like')) : t('discover.card.signInToLike')}
+                        aria-label={signedIn ? (liked ? t('discover.card.unlikeProfile') : t('discover.card.likeProfile')) : t('discover.card.signInToLike')}
                         aria-pressed={liked}
                       >
                         <Heart className={`w-4 h-4 ${isLiking ? 'animate-pulse' : ''} ${liked ? 'fill-current' : ''}`} />
