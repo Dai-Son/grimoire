@@ -576,8 +576,9 @@ if (!gotTheLock) {
         }
 
         // Restore a previously-persisted social session (no-op if none, or if
-        // we're on Linux without a real secret store — ADR-011).
-        void hydrateSocialSession();
+        // we're on Linux without a real secret store: ADR-011). Its check
+        // calls the Social server, so it waits until Social is turned on.
+        if (loadSettings().experimentalSocial) void hydrateSocialSession();
 
         // Resume the opt-in match-salt contributor across restarts.
         if (loadSettings().contributeMatchSalts) {

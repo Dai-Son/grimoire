@@ -6,6 +6,7 @@ import { detectDeadlockPath, looksLikeDeadlockPath } from '../services/deadlock'
 import { ensureDevDeadlockPath } from '../services/dev';
 import { syncForgeBridgeWithSettings } from '../services/forgeBridge';
 import { assertUpdateChannelChange, syncUpdaterWithSettings } from '../services/updater';
+import { hydrateOnBoot as hydrateSocialSession } from '../services/socialAuth';
 
 // detect-deadlock
 ipcMain.handle('detect-deadlock', (): string | null => {
@@ -32,6 +33,7 @@ ipcMain.handle('get-settings', (): AppSettings => {
 // set-settings
 ipcMain.handle('set-settings', (_, settings: AppSettings): void => {
     const safetyWasOn = loadSettings().experimentalModSafety;
+    const socialWasOn = loadSettings().experimentalSocial;
     assertUpdateChannelChange(settings.updateChannel);
     saveSettings(settings);
     syncUpdaterWithSettings();
@@ -45,4 +47,7 @@ ipcMain.handle('set-settings', (_, settings: AppSettings): void => {
     if (settings.experimentalModSafety && !safetyWasOn && deadlockPath) {
         auditInstalledSafety(deadlockPath).catch(err => console.error('[mod-safety] Inspection failed:', err));
     }
+    // Launch skips the saved-session check while Social is off, so turning it
+    // on restores the session now instead of at the next launch.
+    if (settings.experimentalSocial && !socialWasOn) void hydrateSocialSession();
 });

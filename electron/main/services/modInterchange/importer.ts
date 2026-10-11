@@ -64,6 +64,7 @@ import type {
 } from '../../../../src/lib/modInterchange';
 import { dmmIdFromVpkName } from '../../../../src/lib/dmmMigration';
 import { dmmExtensionOf } from './dmmReader';
+import { isGameBananaImageUrl } from '../../utils/gamebananaImage';
 import { ledgerModsFor, recordLedgerMods, type LedgerModRecord } from './ledger';
 
 /** Tolerance when comparing a VPK's mtime against the mtime of the DMM record
@@ -103,7 +104,7 @@ function stripArchiveExt(name: string): string {
 
 function metadataFor(mod: InterchangeMod): ModMetadata {
   const gb = mod.origin.provider === 'gamebanana' ? mod.origin : null;
-  const thumbnail = mod.thumbnailUrl && /^https?:\/\//i.test(mod.thumbnailUrl) ? mod.thumbnailUrl : undefined;
+  const thumbnail = isGameBananaImageUrl(mod.thumbnailUrl) ? mod.thumbnailUrl : undefined;
   return {
     modName: mod.name,
     author: mod.author ?? undefined,
