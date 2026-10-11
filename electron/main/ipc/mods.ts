@@ -9,10 +9,10 @@ import { tmpdir } from 'os';
 import { loadSettings, saveSettings, getActiveDeadlockPath } from '../services/settings';
 import {
     scanMods,
+    scanModsAfterMutations,
     enableMod,
     enableModUnlocked,
     disableMod,
-    deleteMod,
     deleteMods,
     assertReplacementSafety,
     setModPriority,
@@ -24,8 +24,8 @@ import {
     runExclusiveModMutation,
     type Mod,
 } from '../services/mods';
-import { metaKeyFor, isValidDeadlockPath } from '../services/deadlock';
-import { getModMetadata, setModMetadata, setModMetadataWithHash, removeModMetadata, pruneOrphanMetadata, type ModMetadata } from '../services/metadata';
+import { metaKeyFor } from '../services/deadlock';
+import { getModMetadata, setModMetadata, setModMetadataWithHash, removeModMetadata, type ModMetadata } from '../services/metadata';
 import { inferHeroFromTitle } from '@grimoire/social-types/heroes';
 import { inferHeroFromVpk, classifyGlobalModFromVpk, GLOBAL_CLASSIFIER_VERSION, parseVpkDirectory, parseVpkDirectoriesAsync } from '../services/vpk';
 import { notifyModChanges } from '../services/modChangeObservation';
@@ -79,13 +79,9 @@ import { planLocalVariantReplacementRestore } from '../services/localVariantRepl
 import { resolveImportedVariantLabel } from '../../../src/lib/customModImport';
 import type { ImportCustomModArgs, ImportCustomModsBatchArgs, ImportCustomModsBatchResult, ImportCustomModResult, ImportCustomModsProgress, ImportSoulContainerGlbArgs, LocalVariantGroupTarget, PreviewSoulContainerGlbArgs, RestoreLocalVariantGroupReplacementArgs, SetLocalVariantGroupResult, SoulContainerPreview, ImportSpiritUrnGlbArgs, PreviewSpiritUrnGlbArgs, SpiritUrnPreview } from '../../../src/types/electron';
 import type { VpkExportResult, HeroSoundSwapRequest } from '../../../src/types/foundry';
-import type { AbilitySoundClassification, AddMergeSourcesResult, MergeSourceReplacement, ReplaceMergeSourcesResult, ApplyUnknownCustomModArgs, ApplyUnknownModMatchArgs, AssociateUnknownModArgs, EditLocalModArgs, GlobalModType, LockerHeroSource, MergeModsArgs, Mod as WireMod, SoulContainerImportInfo, SoundSwapInfo, UrnImportInfo, UnmergeModResult, ExtractMergeSourceResult, UnknownModFileList, ImprintPreflightResult, ImprintDetails, PeekImprintResult } from '../../../src/types/mod';
+import type { AbilitySoundClassification, AddMergeSourcesResult, DeleteModEntry, DeleteModsResult, MergeSourceReplacement, ReplaceMergeSourcesResult, ApplyUnknownCustomModArgs, ApplyUnknownModMatchArgs, AssociateUnknownModArgs, EditLocalModArgs, GlobalModType, LockerHeroSource, MergeModsArgs, Mod as WireMod, SoulContainerImportInfo, SoundSwapInfo, UrnImportInfo, UnmergeModResult, ExtractMergeSourceResult, UnknownModFileList, ImprintPreflightResult, ImprintDetails, PeekImprintResult } from '../../../src/types/mod';
 
 const unknownDetectionControllers = new Map<string, AbortController>();
-
-// Last path we warned about skipping the orphan prune for, so the warning lands
-// once per path instead of once per get-mods.
-let lastUntrustedPathWarned: string | null = null;
 
 interface UnknownCacheBulkRequest {
     modId: string;
@@ -318,49 +314,15 @@ ipcMain.handle('get-mods', async (): Promise<Mod[]> => {
     if (!deadlockPath) {
         return [];
     }
-    const mods = await scanMods(deadlockPath);
-    // Self-heal users whose metadata.json still carries orphan entries from
-    // pre-fix deletes (issue #26). Skip while dev mode is active: the dev
-    // sandbox starts empty, and pruning against it would wipe every real
-    // install's name/thumbnail/gameBananaId from the global metadata sidecar.
+    let mods = await scanModsAfterMutations(deadlockPath);
     const settings = loadSettings();
-    // Same reasoning, for the real install: an empty scan is only evidence that
-    // the user has no mods when it came from a Deadlock folder that is actually
-    // there. A configured path can stop resolving (Steam mid-update after a
-    // reboot, a moved library, a drive that has not come up yet), and the scan
-    // roots are created on demand by getAddonsPath/getGrimoirePath, so the scan
-    // silently fabricates an empty addons tree and reports zero mods rather than
-    // failing. Pruning against that deletes every name, id, thumbnail and hero
-    // assignment the user has (reported 2026-08-14: 26 mods reduced to
-    // "Pak01".."Pak31" after a PC restart). gameinfo.gi is the discriminator:
-    // Steam ships it and nothing on the install path writes one.
-    //
-    // The devMode check stays load-bearing rather than redundant: setupDevMode
-    // (services/dev.ts) writes an empty gameinfo.gi into the sandbox, so the
-    // sandbox passes this test and would otherwise prune the real sidecar
-    // against a tree that has never held a mod.
-    const trustworthyScan = isValidDeadlockPath(deadlockPath);
-    if (!trustworthyScan && deadlockPath !== lastUntrustedPathWarned) {
-        // Once per path, not once per get-mods: this handler runs on every visit
-        // to Installed, every toggle and every reorder, and a user whose
-        // gameinfo.gi is genuinely missing (antivirus, partial verify) would
-        // otherwise drown their own diagnostic report in this line.
-        lastUntrustedPathWarned = deadlockPath;
-        console.warn(
-            `[Metadata] Skipping orphan prune: ${deadlockPath} has no game/citadel/gameinfo.gi, so this scan (${mods.length} VPKs) is not evidence of what is installed.`
-        );
-    }
-    if (!settings.devMode && trustworthyScan) {
-        // Prune against ALL scanned files (including managed VPKs) so we don't
-        // wipe their metadata before filtering them out of the list below.
-        pruneOrphanMetadata(new Set(mods.map((m) => m.metaKey)), deadlockPath);
-    }
     // Hide Grimoire-managed Locker VPKs (hero cards + ability sounds). They're
     // driven solely through the Locker pickers and are auto-enabled + pinned to
     // the front of the load order (services/lockerVpk.ts), so surfacing them in
     // the Installed list would only let the user disable or reorder them and
     // silently break their applied cosmetics.
-    const visible = mods.filter((m) => !isLockerManaged(m.metaKey));
+    const isVisible = (m: Mod): boolean => !isLockerManaged(m.metaKey);
+    let visible = mods.filter(isVisible);
     // Pre-warm the VPK parse cache across the worker pool for mods whose lazy
     // classifications will parse inside enrichMod below. enrichMod stays sync;
     // its parseVpkDirectoryCached calls hit the warmed cache instead of
@@ -369,6 +331,10 @@ ipcMain.handle('get-mods', async (): Promise<Mod[]> => {
     const warmPaths = visible.filter(needsVpkParseForEnrich).map((m) => m.path);
     if (warmPaths.length > 0) {
         await parseVpkDirectoriesAsync(warmPaths);
+        // A mutation can rename slots during the parse. enrichMod persists
+        // classifications by metaKey, so rescan and enrich with no await between.
+        mods = await scanModsAfterMutations(deadlockPath);
+        visible = mods.filter(isVisible);
     }
     const enriched = visible.map(enrichMod);
     notifyModChanges();
@@ -455,22 +421,22 @@ ipcMain.handle('reveal-mod-in-folder', async (_, modId: string): Promise<void> =
 });
 
 // delete-mod
-ipcMain.handle('delete-mod', async (_, modId: string): Promise<void> => {
+ipcMain.handle('delete-mod', async (_, entry: DeleteModEntry): Promise<DeleteModsResult> => {
     const deadlockPath = getActiveDeadlockPath();
     if (!deadlockPath) {
         throw new Error('No Deadlock path configured');
     }
-    await deleteMod(deadlockPath, modId);
+    return deleteMods(deadlockPath, [entry]);
 });
 
-// delete-mods: the Installed delete dialog's ids as one locked batch. Streams a
-// tick per removed mod to the requesting renderer via 'delete-mods-progress'.
-ipcMain.handle('delete-mods', async (event, modIds: string[]): Promise<void> => {
+// delete-mods: the Installed delete dialog's entries as one locked batch. Streams a
+// tick per entry to the requesting renderer via 'delete-mods-progress'.
+ipcMain.handle('delete-mods', async (event, entries: DeleteModEntry[]): Promise<DeleteModsResult> => {
     const deadlockPath = getActiveDeadlockPath();
     if (!deadlockPath) {
         throw new Error('No Deadlock path configured');
     }
-    await deleteMods(deadlockPath, modIds, (progress) => event.sender.send('delete-mods-progress', progress));
+    return deleteMods(deadlockPath, entries, (progress) => event.sender.send('delete-mods-progress', progress));
 });
 
 ipcMain.handle('assert-replacement-safety', async (_, modIds: string[]): Promise<void> => {
@@ -611,7 +577,10 @@ ipcMain.handle(
             throw new Error('Download completed, but the installed replacement VPK could not be found. The unknown mod was kept.');
         }
 
-        await deleteMod(deadlockPath, target.id);
+        const { skipped } = await deleteMods(deadlockPath, [target]);
+        if (skipped.length > 0) {
+            throw new Error('The unknown mod changed during the download. It was kept.');
+        }
 
         const finalFileNames: string[] = [];
         if (wasEnabled) {
@@ -814,7 +783,7 @@ ipcMain.handle(
             }
 
             return { updated: enrichMod(target), refresh: refreshMods };
-        });
+        }, { healPath: deadlockPath });
 
         for (const mod of refresh) {
             await refreshEmbedAfterMetadataChange(deadlockPath, mod.id, mod.metaKey, mod.path);
@@ -920,7 +889,7 @@ ipcMain.handle(
             // exactly the state these writes were made against; a concurrent
             // toggle can no longer rename a slot between commit and scan.
             return { groupId: plan.groupId, renamed: renamedMods, snapshot: await scanMods(deadlockPath) };
-        });
+        }, { healPath: deadlockPath });
 
         for (const mod of renamed) {
             await refreshEmbedAfterMetadataChange(deadlockPath, mod.id, mod.metaKey, mod.path);
@@ -970,7 +939,7 @@ ipcMain.handle(
                 changedMods.push(mod);
             }
             return changedMods;
-        });
+        }, { healPath: deadlockPath });
 
         // The group name is part of the imprint metadata. Refresh only after
         // releasing the non-reentrant mutation lock, matching local renames.
@@ -1692,7 +1661,8 @@ ipcMain.handle(
                         resolvedItem,
                         thumbnailFetchTargets,
                         !!item.localGroupId?.trim()
-                    )
+                    ),
+                    { healPath: deadlockPath }
                 );
                 results.push({ vpkPath: item.vpkPath, ok: true, imported, localGroupId, needsReview });
                 report({ index, total, vpkPath: item.vpkPath, phase: 'done', imported });

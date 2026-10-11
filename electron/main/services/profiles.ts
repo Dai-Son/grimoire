@@ -583,7 +583,7 @@ export async function applyProfile(deadlockPath: string, profileId: string): Pro
         } else {
             console.log(`[profiles] reorder: nothing to reorder`);
         }
-    });
+    }, { healPath: deadlockPath });
 
     if (failures.length > 0) {
         console.warn(

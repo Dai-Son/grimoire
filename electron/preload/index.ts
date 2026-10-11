@@ -21,6 +21,7 @@ import type {
     ApplyUnknownCustomModArgs,
     ApplyUnknownModMatchArgs,
     AssociateUnknownModArgs,
+    DeleteModEntry,
     DeleteModsProgress,
     GlobalModType,
     EditLocalModArgs,
@@ -159,8 +160,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getMods: () => ipcRenderer.invoke('get-mods'),
     enableMod: (modId: string) => ipcRenderer.invoke('enable-mod', modId),
     disableMod: (modId: string) => ipcRenderer.invoke('disable-mod', modId),
-    deleteMod: (modId: string) => ipcRenderer.invoke('delete-mod', modId),
-    deleteMods: (modIds: string[]) => ipcRenderer.invoke('delete-mods', modIds),
+    deleteMod: (entry: DeleteModEntry) => ipcRenderer.invoke('delete-mod', entry),
+    deleteMods: (entries: DeleteModEntry[]) => ipcRenderer.invoke('delete-mods', entries),
     onDeleteModsProgress: (callback: (progress: DeleteModsProgress) => void) => {
         const handler = (_event: Electron.IpcRendererEvent, progress: DeleteModsProgress) => callback(progress);
         ipcRenderer.on('delete-mods-progress', handler);

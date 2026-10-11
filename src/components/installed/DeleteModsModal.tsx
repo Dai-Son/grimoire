@@ -3,11 +3,11 @@ import { Trans, useTranslation } from 'react-i18next';
 import { ConfirmModal } from '../common/PageComponents';
 import { ProgressBar } from '../common/ui';
 import { useAppStore } from '../../stores/appStore';
-import type { DeleteModsProgress } from '../../types/mod';
+import type { DeleteModEntry, DeleteModsProgress } from '../../types/mod';
 
-/** `ids` is a list so one prompt drives single-mod, group and bulk deletes. */
+/** `mods` is a list so one prompt drives single-mod, group and bulk deletes. */
 export interface DeleteModsTarget {
-  ids: string[];
+  mods: DeleteModEntry[];
   name: string;
   isGroup: boolean;
   isBulk?: boolean;
@@ -28,8 +28,8 @@ export function DeleteModsModal({ target, onCancel, onDeleted }: DeleteModsModal
 
   const confirm = async () => {
     if (!target || progress) return;
-    setProgress({ done: 0, total: target.ids.length });
-    await deleteMods(target.ids, setProgress);
+    setProgress({ done: 0, total: target.mods.length });
+    await deleteMods(target.mods, setProgress);
     setProgress(null);
     onDeleted(target);
   };
@@ -44,7 +44,7 @@ export function DeleteModsModal({ target, onCancel, onDeleted }: DeleteModsModal
         target?.isBulk
           ? t('installed.delete.bulkTitle', { name: target.name })
           : target?.isGroup
-            ? t('installed.delete.groupTitle', { count: target.ids.length })
+            ? t('installed.delete.groupTitle', { count: target.mods.length })
             : t('installed.delete.title')
       }
       message={
@@ -53,7 +53,7 @@ export function DeleteModsModal({ target, onCancel, onDeleted }: DeleteModsModal
         ) : target?.isGroup ? (
           <Trans
             i18nKey="installed.delete.groupMessage"
-            values={{ count: target.ids.length, name: target.name }}
+            values={{ count: target.mods.length, name: target.name }}
             components={nameTag}
           />
         ) : (
@@ -64,7 +64,7 @@ export function DeleteModsModal({ target, onCancel, onDeleted }: DeleteModsModal
         target?.isBulk
           ? t('installed.delete.bulkConfirm', { name: target.name })
           : target?.isGroup
-            ? t('installed.delete.groupConfirm', { count: target.ids.length })
+            ? t('installed.delete.groupConfirm', { count: target.mods.length })
             : t('common.actions.delete')
       }
       variant="danger"

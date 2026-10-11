@@ -517,7 +517,7 @@ export async function mergeMods(
         throw new Error('The same mod was selected more than once.');
     }
 
-    return runExclusiveModMutation(() => mergeModsLocked(deadlockPath, modIds, options, trimmedName));
+    return runExclusiveModMutation(() => mergeModsLocked(deadlockPath, modIds, options, trimmedName), { healPath: deadlockPath });
 }
 
 async function mergeModsLocked(
@@ -986,7 +986,7 @@ export async function unmergeMod(
     deadlockPath: string,
     mergedModId: string
 ): Promise<UnmergeModResult> {
-    return runExclusiveModMutation(() => unmergeModLocked(deadlockPath, mergedModId));
+    return runExclusiveModMutation(() => unmergeModLocked(deadlockPath, mergedModId), { healPath: deadlockPath });
 }
 
 async function unmergeModLocked(
@@ -1072,7 +1072,8 @@ export async function addMergeSources(
         throw new Error('The same mod was selected more than once.');
     }
     return runExclusiveModMutation(() =>
-        addMergeSourcesLocked(deadlockPath, mergedModId, addModIds, options)
+        addMergeSourcesLocked(deadlockPath, mergedModId, addModIds, options),
+        { healPath: deadlockPath }
     );
 }
 
@@ -1322,7 +1323,8 @@ export async function replaceMergeSources(
         throw new Error('The same replacement mod was selected more than once.');
     }
     return runExclusiveModMutation(() =>
-        replaceMergeSourcesLocked(deadlockPath, mergedModId, replacements, options)
+        replaceMergeSourcesLocked(deadlockPath, mergedModId, replacements, options),
+        { healPath: deadlockPath }
     );
 }
 
@@ -1588,7 +1590,8 @@ export async function extractMergeSource(
     sourceFileName: string
 ): Promise<ExtractMergeSourceResult> {
     return runExclusiveModMutation(() =>
-        extractMergeSourceLocked(deadlockPath, mergedModId, sourceFileName)
+        extractMergeSourceLocked(deadlockPath, mergedModId, sourceFileName),
+        { healPath: deadlockPath }
     );
 }
 

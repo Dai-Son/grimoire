@@ -116,7 +116,8 @@ import {
     type ForgeInstallRequest,
 } from './services/forgeBridge';
 import { installForgeVpk } from './services/download';
-import { backfillMissingMetadataHashes } from './services/metadata';
+import { healModFoldersExclusive, runExclusiveModMutation } from './services/mods';
+import { backfillMissingMetadataHashes, recoverPrunedIdentities } from './services/metadata';
 import { backfillImprintedFlags } from './services/imprintMods';
 import { destroyDiscordRpc } from './services/discordRpc';
 import { startSaltIngest } from './services/saltIngest';
@@ -180,17 +181,28 @@ async function handleForgeInstall(request: ForgeInstallRequest): Promise<void> {
     );
 }
 
-async function backfillStartupMetadataHashes(): Promise<void> {
+async function runStartupMetadataMaintenance(): Promise<void> {
     const deadlockPath = getConfiguredDeadlockPath();
     if (!deadlockPath) return;
 
     try {
-        const updated = await backfillMissingMetadataHashes(deadlockPath);
+        await healModFoldersExclusive(deadlockPath);
+    } catch (error) {
+        console.warn('[mods] Startup heal failed:', error);
+    }
+
+    try {
+        const updated = await backfillMissingMetadataHashes(deadlockPath, (apply) => runExclusiveModMutation(apply));
         if (updated > 0) {
             console.log(`[Metadata] Backfilled SHA-256 for ${updated} mod metadata entr${updated === 1 ? 'y' : 'ies'}`);
         }
     } catch (error) {
         console.warn('[Metadata] Startup SHA-256 backfill failed:', error);
+    }
+
+    const recovered = recoverPrunedIdentities();
+    if (recovered > 0) {
+        console.log(`[Metadata] Recovered identity for ${recovered} mod${recovered === 1 ? '' : 's'} from pre-prune backups`);
     }
 
     try {
@@ -582,7 +594,7 @@ if (!gotTheLock) {
         // or grimoire crashed while the user was playing vanilla), then fill in
         // SHA-256 metadata for older entries that were written before hashing.
         void runStartupRecovery().finally(() => {
-            void backfillStartupMetadataHashes();
+            void runStartupMetadataMaintenance();
         });
 
         // Initialize auto-updater (production only). Skip the background check

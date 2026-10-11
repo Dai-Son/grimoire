@@ -6,6 +6,7 @@ import { showToast } from '../../stores/toastStore';
 import { revealModInFolder } from '../../lib/api';
 import type { ModConflict } from '../../lib/api';
 import type { Mod, GlobalModType } from '../../types/mod';
+import { isCardSelectClick } from './selection';
 import ModThumbnail from '../ModThumbnail';
 import AudioPreviewPlayer from '../AudioPreviewPlayer';
 import PriorityEditor from '../PriorityEditor';
@@ -1291,7 +1292,7 @@ export function ModCard({
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
       onClickCapture={(event) => {
-        if (!selectMode && event.shiftKey && onSelectToggle) {
+        if (!selectMode && event.shiftKey && onSelectToggle && isCardSelectClick(event.currentTarget, event.target)) {
           event.preventDefault();
           event.stopPropagation();
           onSelectToggle(event);
