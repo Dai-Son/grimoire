@@ -2690,6 +2690,10 @@
       "create": "Create",
       "getStarted": "Get Started",
       "skipForNow": "Skip for now"
+    },
+    "privacy": {
+      "title": "Privacy",
+      "body": "Grimoire doesn't collect anything about you. On its own it only talks to GameBanana, for mods and their thumbnails, and GitHub, for new versions of Grimoire. The <privacyLink>privacy page</privacyLink> lists every request it can make."
     }
   },
   "sidebar": {

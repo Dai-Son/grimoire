@@ -312,7 +312,8 @@ export default function Sidebar() {
     return unsub;
   }, []);
 
-  const autoCheckAppUpdates = settings?.autoCheckAppUpdates;
+  // A fresh install waits for the welcome screen, which offers the same switch.
+  const autoCheckAppUpdates = settings?.autoCheckAppUpdates && settings.hasCompletedSetup;
   useEffect(() => {
     if (autoCheckAppUpdates) window.electronAPI.updater.checkForUpdates().catch(() => { });
   }, [autoCheckAppUpdates]);
