@@ -10,7 +10,7 @@ import AppUpdateBanner from './AppUpdateBanner';
 import { ConfirmModal } from './common/PageComponents';
 import { ToastStack } from './common/ToastStack';
 import { showToast } from '../stores/toastStore';
-import { getSettings, setSettings } from '../lib/api';
+import { getSettings } from '../lib/api';
 import { useGameinfoStore } from '../stores/gameinfoStore';
 import GameinfoBanner from './GameinfoBanner';
 import { ModSafetyBanner } from './ModSafety';
@@ -264,7 +264,8 @@ export default function Layout() {
   const handleSetupComplete = async () => {
     try {
       const settings = await getSettings();
-      await setSettings({ ...settings, hasCompletedSetup: true });
+      // Through the store, so the Sidebar's launch update check sees the flag.
+      await useAppStore.getState().saveSettings({ ...settings, hasCompletedSetup: true });
       setShowWelcome(false);
       // Navigate to Browse tab after first-time setup
       navigate('/browse');

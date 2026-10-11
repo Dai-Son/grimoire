@@ -605,10 +605,13 @@ if (!gotTheLock) {
         });
 
         // Initialize auto-updater (production only). Skip the background check
-        // for apt/AUR/snap installs since the package manager owns updates.
+        // for apt/AUR/snap installs since the package manager owns updates, and
+        // on a fresh install, where the renderer checks once the welcome screen
+        // (which offers the off switch) is done.
         if (!is.dev && mainWindow) {
             initUpdater(mainWindow);
-            if (getInstallSource() !== 'managed' && loadSettings().autoCheckAppUpdates) {
+            const settings = loadSettings();
+            if (getInstallSource() !== 'managed' && settings.autoCheckAppUpdates && settings.hasCompletedSetup) {
                 setTimeout(() => {
                     checkForUpdates().catch((err) => {
                         console.log('[Updater] Auto-check failed:', err.message);
