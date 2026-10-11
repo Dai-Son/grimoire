@@ -721,6 +721,15 @@ export interface DeleteModsProgress {
   total: number;
 }
 
+// What a delete names: ids are reused slot paths, so size + installedAt prove
+// the mod at the id is still the one that was picked.
+export type DeleteModEntry = Pick<Mod, 'id' | 'size' | 'installedAt'>;
+
+export interface DeleteModsResult {
+  /** Ids whose mod was gone or had changed since it was picked. Nothing was deleted for them. */
+  skipped: string[];
+}
+
 export interface MergeModsArgs {
   modIds: string[];
   name: string;
@@ -1133,6 +1142,10 @@ export interface AppSettings {
   autoEnableDownloads: boolean;
   /** Args written to Steam's localconfig.vdf for Deadlock just before launch. */
   steamLaunchOptions: string;
+  /** Set once the user saves the Launch Options card. Until then (or while the
+   *  string is non-empty) an empty `steamLaunchOptions` is just the default and
+   *  must never overwrite what the user set in Steam themselves. */
+  steamLaunchOptionsManaged: boolean;
   /** Currently active profile. */
   activeProfileId: string | null;
   /** Ask for confirmation before "Update" overwrites a profile with the current

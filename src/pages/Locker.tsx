@@ -265,7 +265,7 @@ function FacetSheenDefs() {
 
 export default function Locker() {
   const { t } = useTranslation();
-  const { settings, mods, modsLoading, modsError, loadSettings, loadMods, toggleMod, reorderMods, deleteMod, setModPriorityFolder, setBrowseUi, setLockerHeroName, lockerModImages, lockerHideHeroName, lockerModThumbnails, lockerThumbHideHeroName, loadLockerModImages, shuffleOnLaunch, setShuffleOnLaunch, shuffleIncluded, toggleShuffleIncluded, setShuffleIncluded, shuffleVariants, setShuffleVariant } =
+  const { settings, mods, modsLoading, modsError, loadSettings, loadMods, toggleMod, reorderMods, deleteMods, setModPriorityFolder, setBrowseUi, setLockerHeroName, lockerModImages, lockerHideHeroName, lockerModThumbnails, lockerThumbHideHeroName, loadLockerModImages, shuffleOnLaunch, setShuffleOnLaunch, shuffleIncluded, toggleShuffleIncluded, setShuffleIncluded, shuffleVariants, setShuffleVariant } =
     useAppStore();
   const activeDeadlockPath = getActiveDeadlockPath(settings);
   const [categories, setCategories] = useState<GameBananaCategoryNode[]>(
@@ -1149,18 +1149,18 @@ export default function Locker() {
   };
 
   // Delete a skin (all its variant VPKs) straight from the Locker. We confirm
-  // first, then delete sequentially to keep priority bookkeeping coherent (the
-  // store removes each id locally as it goes).
+  // first, then delete as one batch.
   // Shared delete confirmation for the Locker (hero skins + global cosmetics).
-  // Holds the mod ids to remove and a display name for the prompt copy.
-  const [deletePrompt, setDeletePrompt] = useState<{ ids: string[]; name: string } | null>(null);
+  // Holds the mods to remove as they looked when the prompt opened, and a
+  // display name for the prompt copy.
+  const [deletePrompt, setDeletePrompt] = useState<{ mods: Mod[]; name: string } | null>(null);
+  const requestDeleteMods = (ids: string[], name: string) =>
+    setDeletePrompt({ mods: mods.filter((m) => ids.includes(m.id)), name });
   const confirmDeleteMods = async () => {
     if (!deletePrompt) return;
-    const { ids } = deletePrompt;
+    const { mods: doomed } = deletePrompt;
     setDeletePrompt(null);
-    for (const id of ids) {
-      await deleteMod(id);
-    }
+    await deleteMods(doomed);
   };
 
   // Prop containers (soul containers + spirit urns) are single-select: each kind
@@ -1452,7 +1452,7 @@ export default function Locker() {
               onBrowseSkins={() => openHeroInBrowse(hero)}
               onSelect={(modId) => setActiveSkin(hero.id, modId)}
               onToggleVariant={(modId) => toggleHeroVariant(hero.id, modId)}
-              onRequestDelete={(ids, name) => setDeletePrompt({ ids, name })}
+              onRequestDelete={requestDeleteMods}
               includedSkinKeys={shuffleIncluded}
               onToggleShuffleIncluded={toggleShuffleIncluded}
               shuffleVariantChoices={shuffleVariants}
@@ -1564,7 +1564,7 @@ export default function Locker() {
             onSelect={(modId) => setActiveSkin(overlayHero.id, modId)}
             onToggleVariant={(modId) => toggleHeroVariant(overlayHero.id, modId)}
             onReorderSkins={(orderedModIds) => reorderHeroSkins(overlayHero.id, orderedModIds)}
-            onRequestDeleteSkin={(ids, name) => setDeletePrompt({ ids, name })}
+            onRequestDeleteSkin={requestDeleteMods}
             hideNsfwPreviews={shouldBlurNsfw(settings)}
             includedSkinKeys={shuffleIncluded}
             onToggleShuffleIncluded={toggleShuffleIncluded}
@@ -1608,7 +1608,7 @@ export default function Locker() {
             onBack={() => navigate('/locker')}
             onToggle={selectGlobalMod}
             onSetGlobalType={tagModGlobalType}
-            onRequestDelete={(ids, name) => setDeletePrompt({ ids, name })}
+            onRequestDelete={requestDeleteMods}
             onImportSoul={() => setSoulImportOpen(true)}
             onImportUrn={() => setUrnImportOpen(true)}
             priorityMods={priorityMods}

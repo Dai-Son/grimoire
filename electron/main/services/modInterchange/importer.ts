@@ -634,7 +634,7 @@ export async function importInterchange(
     }
 
     await applyImportedLoadOrder(opts.deadlockPath, importedEnabled, results);
-  });
+  }, { healPath: opts.deadlockPath });
 
   opts.onProgress?.(ordered.length, ordered.length, '');
   recordLedgerMods(manager, ledgerRecordsOf(results));

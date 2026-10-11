@@ -591,7 +591,7 @@ export async function imprintOneMod(deadlockPath: string, modId: string): Promis
         // metaKey are stable; re-scan only to return up-to-date size/state.
         const rescanned = (await scanMods(deadlockPath)).find((m) => m.metaKey === mod.metaKey);
         return rescanned ?? mod;
-    });
+    }, { healPath: deadlockPath });
 }
 
 /**
@@ -780,7 +780,7 @@ export async function imprintAllInstalled(
         await Promise.all(Array.from({ length: Math.min(poolSize, total) }, () => worker()));
 
         return result;
-    });
+    }, { healPath: deadlockPath });
 }
 
 /**
@@ -926,7 +926,7 @@ export async function imprintPreflight(deadlockPath: string): Promise<ImprintPre
         }
 
         return result;
-    });
+    }, { healPath: deadlockPath });
 }
 
 /**
@@ -1005,5 +1005,5 @@ export async function backfillImprintedFlags(deadlockPath: string): Promise<numb
             }
         }
         return updated;
-    });
+    }, { healPath: deadlockPath });
 }

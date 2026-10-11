@@ -282,7 +282,7 @@ export default function DownloadQueueIndicator({ className = '' }: DownloadQueue
                                 <span>
                                     {queueState.progress
                                         ? `${formatBytes(queueState.progress.downloaded)} / ${formatBytes(queueState.progress.total)}`
-                                        : '—'}
+                                        : '-'}
                                 </span>
                                 <span className="flex items-center gap-2">
                                     {currentSpeed > 0 && <span>{formatSpeed(currentSpeed)}</span>}

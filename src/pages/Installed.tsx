@@ -57,7 +57,7 @@ import { showToast } from '../stores/toastStore';
 import { useAppStore, type BrowseArtistRef } from '../stores/appStore';
 import { getActiveDeadlockPath, shouldBlurNsfw } from '../lib/appSettings';
 import { isImprintPending } from '../lib/imprintPending';
-import { getConflicts, openModsFolder, getModDetails, getModFileList, downloadMod, createSnapshot, deleteMod as deleteModApi, assertReplacementSafety, detectUnknownModFilters, detectUnknownModCacheBulk, cancelUnknownModDetection, onUnknownModDetectionProgress, applyUnknownModMatch, applyUnknownCustomMod, associateUnknownMod, mergeMods, unmergeMod, extractMergeSource, addMergeSources, replaceMergeSources, reorderMods as apiReorderMods, restoreLocalVariantGroupReplacement, setModIgnoreUpdates, getLockerOverview, imprintAllInstalled, onImprintAllInstalledProgress, imprintPreflight, launchModded } from '../lib/api';
+import { getConflicts, openModsFolder, getModDetails, getModFileList, downloadMod, createSnapshot, deleteReplacedMod, assertReplacementSafety, detectUnknownModFilters, detectUnknownModCacheBulk, cancelUnknownModDetection, onUnknownModDetectionProgress, applyUnknownModMatch, applyUnknownCustomMod, associateUnknownMod, mergeMods, unmergeMod, extractMergeSource, addMergeSources, replaceMergeSources, reorderMods as apiReorderMods, restoreLocalVariantGroupReplacement, setModIgnoreUpdates, getLockerOverview, imprintAllInstalled, onImprintAllInstalledProgress, imprintPreflight, launchModded } from '../lib/api';
 import type { UnmergeModResult, ImportCustomModArgs, ImportCustomModResult } from '../lib/api';
 import type { ModConflict } from '../lib/api';
 import type { Mod, GlobalModType, UnknownModDetectionProgress, UnknownModFilterGuess, MergedModSource, MergeSourceReplacement, AssociateUnknownModArgs } from '../types/mod';
@@ -101,7 +101,7 @@ import {
   type GlobalVpkRestoreSnapshot,
 } from '../lib/vpkRestore';
 import { modRestoreKey } from '../lib/soloRestore';
-import { findReplacementTargetIdsAfterInstall } from '../lib/replacementCleanup';
+import { findReplacementTargetIdsAfterInstall, modsByIds } from '../lib/replacementCleanup';
 import { planLocalVariantUpdateRestore } from '../lib/localVariantUpdateRestore';
 import { buildCachedModDetails, canUseCachedModDetails } from '../lib/cachedModDetails';
 import {
@@ -134,6 +134,7 @@ import { LockerOverridesModal } from '../components/LockerOverridesModal';
 import { ViewModeToggle, EmptyState, ConfirmModal, type ViewMode } from '../components/common/PageComponents';
 import { InstalledSection } from '../components/installed/InstalledSection';
 import { useInstalledSelection } from '../components/installed/useInstalledSelection';
+import { entrySelectionIds, visibleSelectionEntries } from '../components/installed/selection';
 import { useShiftKey } from '../components/installed/useShiftKey';
 import { HeroTagLabel } from '../components/installed/chips';
 import { ModCard } from '../components/installed/ModCard';
@@ -896,12 +897,8 @@ export default function Installed() {
   const shiftHeld = useShiftKey();
   const [enabledCollapsed, setEnabledCollapsed] = useState(false);
   const [disabledCollapsed, setDisabledCollapsed] = useState(false);
-  const { selectedIds, setSelectedIds, toggleSelection } = useInstalledSelection(() =>
-    [...(enabledCollapsed ? [] : visibleEnabled), ...(disabledCollapsed ? [] : visibleDisabled)]
-      .map((entry) => ({
-        key: entry.key,
-        ids: entry.kind === 'single' ? [entry.mod.id] : entry.variants.map((variant) => variant.id),
-      }))
+  const { selectedIds, setSelectedIds, toggleSelection } = useInstalledSelection(mods, () =>
+    visibleSelectionEntries(visibleEnabled, visibleDisabled, enabledCollapsed, disabledCollapsed)
   );
   // Per-item progress for the in-flight bulk enable/disable. While set, the
   // action bar swaps its buttons for a "Enabling 2/5…" line so users see
@@ -1907,6 +1904,7 @@ export default function Installed() {
         installedBeforeCleanup = useAppStore.getState().mods;
         targetIds = replacementTargets.map((mod) => mod.id);
       }
+      const targetMods = modsByIds(targetIds, installedBeforeCleanup);
 
       // A GameBanana update is normally forbidden from entering a local
       // variant group. The narrow restore IPC proves this is a replacement for
@@ -1950,7 +1948,7 @@ export default function Installed() {
         }
       }
       if (localGroupRestore) await restoreLocalVariantGroupReplacement(localGroupRestore);
-      for (const targetId of targetIds) await deleteModApi(targetId);
+      for (const target of targetMods) await deleteReplacedMod(target);
 
       await loadMods({ force: true });
 
@@ -2211,6 +2209,7 @@ export default function Installed() {
             cleanupTargets,
             batch.fileId,
           );
+          const targetMods = modsByIds(targetIds, installedAfterDownload);
           const groupedReplacement = batch.snapshots.some((snapshot) => !!snapshot.localGroupId);
           let localGroupRestore = planLocalVariantUpdateRestore(
             batch.snapshots,
@@ -2243,7 +2242,7 @@ export default function Installed() {
             }
           }
           if (localGroupRestore) await restoreLocalVariantGroupReplacement(localGroupRestore);
-          for (const targetId of targetIds) await deleteModApi(targetId);
+          for (const target of targetMods) await deleteReplacedMod(target);
           completed.push({
             gameBananaId: batch.gameBananaId,
             gameBananaFileId: batch.fileId,
@@ -2556,7 +2555,7 @@ export default function Installed() {
   const openBulkDeleteConfirm = () => {
     if (selectedMods.length === 0) return;
     setModToDelete({
-      ids: selectedMods.map((m) => m.id),
+      mods: selectedMods,
       name: `${selectedMods.length} mod${selectedMods.length === 1 ? '' : 's'}`,
       isGroup: false,
       isBulk: true,
@@ -3280,12 +3279,12 @@ export default function Installed() {
   const deleteEntry = useStableCallback((entry: ModEntry) => {
     if (entry.kind === 'group') {
       setModToDelete({
-        ids: entry.variants.map((v) => v.id),
+        mods: entry.variants,
         name: entry.primary.name,
         isGroup: true,
       });
     } else {
-      setModToDelete({ ids: [entry.mod.id], name: entry.mod.name, isGroup: false });
+      setModToDelete({ mods: [entry.mod], name: entry.mod.name, isGroup: false });
     }
   });
   const editLocalEntry = useStableCallback((mod: Mod) => setLocalEditMod(mod));
@@ -3435,10 +3434,7 @@ export default function Installed() {
   const copyEntryShareCode = useStableCallback((mod: Mod) => void handleCopyShareCode(mod));
   const selectToggleEntry = useStableCallback((entry: ModEntry, shiftKey: boolean) => {
     setSelectMode(true);
-    toggleSelection({
-      key: entry.key,
-      ids: entry.kind === 'single' ? [entry.mod.id] : entry.variants.map((variant) => variant.id),
-    }, shiftKey);
+    toggleSelection({ key: entry.key, ids: entrySelectionIds(entry) }, shiftKey);
   });
 
   if (!activeDeadlockPath) {
@@ -3669,12 +3665,10 @@ export default function Installed() {
   };
 
   const selectAllVisible = () => {
-    const ids = new Set<string>();
-    for (const entry of [...visibleEnabled, ...visibleDisabled]) {
-      if (entry.kind === 'single') ids.add(entry.mod.id);
-      else entry.variants.forEach((v) => ids.add(v.id));
-    }
-    setSelectedIds(ids);
+    setSelectedIds(new Set(
+      visibleSelectionEntries(visibleEnabled, visibleDisabled, enabledCollapsed, disabledCollapsed)
+        .flatMap((entry) => entry.ids)
+    ));
   };
 
   // Keep the Ctrl/Cmd+A handler (installed above) pointed at the latest
@@ -4769,7 +4763,7 @@ export default function Installed() {
             onReorderVariantTo={(source, neighbor, position) =>
               reorderVariantTo(source, neighbor, position)
             }
-            onDeleteVariant={(variant) => deleteMod(variant.id)}
+            onDeleteVariant={deleteMod}
             onRenameVariant={(variant, label) => setVariantLabel(variant.id, label)}
             onOpenModDetails={
               liveEntry.primary.gameBananaId

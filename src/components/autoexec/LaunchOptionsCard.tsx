@@ -19,6 +19,7 @@ import type { SteamLaunchOptionsStatus } from '../../types/electron';
 export default function LaunchOptionsCard() {
   const { t } = useTranslation();
   const [saved, setSaved] = useState<string | null>(null);
+  const [managed, setManaged] = useState(false);
   const [draft, setDraft] = useState('');
   const [status, setStatus] = useState<SteamLaunchOptionsStatus | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -30,6 +31,7 @@ export default function LaunchOptionsCard() {
       const settings = await getSettings();
       setSaved(settings.steamLaunchOptions ?? '');
       setDraft(settings.steamLaunchOptions ?? '');
+      setManaged(settings.steamLaunchOptionsManaged);
       try {
         setStatus(await window.electronAPI.getSteamLaunchOptionsStatus());
       } catch (err) {
@@ -51,8 +53,9 @@ export default function LaunchOptionsCard() {
       // changed an unrelated field in the meantime. Spreading a stale snapshot
       // would silently roll that change back.
       const current: AppSettings = await getSettings();
-      await setSettings({ ...current, steamLaunchOptions: draft });
+      await setSettings({ ...current, steamLaunchOptions: draft, steamLaunchOptionsManaged: true });
       setSaved(draft);
+      setManaged(true);
       setMessage(t('autoexec.launchOptions.saved'));
       setMessageTone('success');
       try {
@@ -148,7 +151,7 @@ export default function LaunchOptionsCard() {
                     {onDisk || t('common.emptyValue')}
                   </code>
                 </div>
-                {!isSaving && (
+                {!isSaving && (managed || saved) && (
                   <p className="text-2xs text-text-secondary/70">
                     <Tx
                       k="autoexec.launchOptions.savedWillOverwrite"

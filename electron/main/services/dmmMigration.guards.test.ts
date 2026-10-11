@@ -313,6 +313,7 @@ describe('recoverability: sidecar backup before the batch write', () => {
     const sb = makeSandbox();
     const liveSlot = join(sb.addons, 'pak50_dir.vpk');
     writeFileSync(liveSlot, Buffer.from('ENABLED-MOD-111'));
+    writeFileSync(join(sb.addons, 'pak01_dir.vpk'), Buffer.from('PRECIOUS'));
     const seeded = JSON.stringify({ 'pak01_dir.vpk': { gameBananaId: 42, modName: 'Precious' } });
     writeFileSync(join(sb.userData, 'mod-metadata.json'), seeded);
     writeState(sb, [{ id: 111, name: 'Enabled A', enabled: true, vpks: [liveSlot] }]);
@@ -335,6 +336,7 @@ describe('recoverability: sidecar backup before the batch write', () => {
     const staleVpk = join(sb.disabled, 'hijack_me_dir.vpk');
     writeFileSync(liveSlot, Buffer.from('ENABLED-MOD-111'));
     writeFileSync(staleVpk, Buffer.from('SOMEONE-ELSES-MOD'));
+    writeFileSync(join(sb.addons, 'pak01_dir.vpk'), Buffer.from('PRECIOUS'));
     const seeded = JSON.stringify({ 'pak01_dir.vpk': { gameBananaId: 42 } });
     writeFileSync(join(sb.userData, 'mod-metadata.json'), seeded);
     writeState(sb, [

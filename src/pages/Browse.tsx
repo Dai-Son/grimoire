@@ -33,7 +33,7 @@ import {
   getGamebananaCategories,
   backfillGameBananaFileId,
   createSnapshot,
-  deleteMod as deleteModApi,
+  deleteReplacedMod,
   assertReplacementSafety,
 } from '../lib/api';
 import { getActiveDeadlockPath, shouldBlurNsfw } from '../lib/appSettings';
@@ -83,7 +83,7 @@ import {
   createGlobalVpkRestoreSnapshot,
   restoreReplacementVpkState,
 } from '../lib/vpkRestore';
-import { findReplacementTargetIdsAfterInstall } from '../lib/replacementCleanup';
+import { findReplacementTargetIdsAfterInstall, modsByIds } from '../lib/replacementCleanup';
 import { showToast } from '../stores/toastStore';
 import { useCursorPackStore } from '../stores/cursorPackStore';
 import { BrowseArtistBanner } from '../components/browse/BrowseArtistBanner';
@@ -1897,11 +1897,11 @@ export default function Browse() {
           replacementTargets,
           fileId,
         );
-        for (const targetId of targetIds) await deleteModApi(targetId);
+        for (const target of modsByIds(targetIds, installedAfterDownload)) await deleteReplacedMod(target);
       } else {
         if (!isDownloadRequestPending(selectedMod.id, fileId)) return;
         await assertReplacementSafety(installedReplacementIds);
-        for (const target of replacementTargets) await deleteModApi(target.id);
+        for (const target of replacementTargets) await deleteReplacedMod(target);
       }
       await loadMods({ force: true });
 
@@ -2084,12 +2084,12 @@ export default function Browse() {
   // file id (rare, e.g. dupe installs), prefer the enabled one as the
   // representative since that's the actionable state.
   const installedFileStates = useMemo(() => {
-    const map = new Map<number, { modId: string; enabled: boolean }>();
+    const map = new Map<number, { modId: string; enabled: boolean; size: number; installedAt: string }>();
     for (const mod of visibleMods) {
       if (typeof mod.gameBananaFileId !== 'number') continue;
       const existing = map.get(mod.gameBananaFileId);
       if (!existing || (mod.enabled && !existing.enabled)) {
-        map.set(mod.gameBananaFileId, { modId: mod.id, enabled: mod.enabled });
+        map.set(mod.gameBananaFileId, { modId: mod.id, enabled: mod.enabled, size: mod.size, installedAt: mod.installedAt });
       }
     }
     return map;

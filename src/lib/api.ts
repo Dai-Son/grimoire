@@ -1,4 +1,4 @@
-import type { Mod, AppSettings, DeleteModsProgress, GlobalModType, UnknownModFilterGuess, UnknownModDetectionProgress, ApplyUnknownModMatchArgs, ApplyUnknownCustomModArgs, AssociateUnknownModArgs, UnknownModFileList, EditLocalModArgs, MergeModsArgs, UnmergeModResult, ExtractMergeSourceResult, AddMergeSourcesResult, MergeSourceReplacement, ReplaceMergeSourcesResult, ImprintAllInstalledResult, ImprintInstalledProgress, ImprintPreflightResult, ImprintDetails, PeekImprintResult, ApplyHeroCardResult, HeroAbilitySlot, AbilitySlot, AbilitySoundParams, ActiveHeroSound, ApplyHeroSoundResult, ActiveHeroColor, ApplyHeroColorResult, ApplyHeroPrismResult, ActiveTrippySkin, ApplyTrippySkinResult, ApplyTrippyVfxResult, TrippySpriteOptions, TrippySpriteResult, TrippyVfxChoice, LockerOverview, LockerCardThumbnail, LockerClearScope, AppearanceSurface } from '../types/mod';
+import type { Mod, AppSettings, DeleteModEntry, DeleteModsProgress, DeleteModsResult, GlobalModType, UnknownModFilterGuess, UnknownModDetectionProgress, ApplyUnknownModMatchArgs, ApplyUnknownCustomModArgs, AssociateUnknownModArgs, UnknownModFileList, EditLocalModArgs, MergeModsArgs, UnmergeModResult, ExtractMergeSourceResult, AddMergeSourcesResult, MergeSourceReplacement, ReplaceMergeSourcesResult, ImprintAllInstalledResult, ImprintInstalledProgress, ImprintPreflightResult, ImprintDetails, PeekImprintResult, ApplyHeroCardResult, HeroAbilitySlot, AbilitySlot, AbilitySoundParams, ActiveHeroSound, ApplyHeroSoundResult, ActiveHeroColor, ApplyHeroColorResult, ApplyHeroPrismResult, ActiveTrippySkin, ApplyTrippySkinResult, ApplyTrippyVfxResult, TrippySpriteOptions, TrippySpriteResult, TrippyVfxChoice, LockerOverview, LockerCardThumbnail, LockerClearScope, AppearanceSurface } from '../types/mod';
 import type {
   InterchangeDocument,
   InterchangeExportReport,
@@ -49,9 +49,13 @@ import i18n from '../i18n';
 // boundary as a raw string, so it must NOT be translated. The user-facing
 // toast is translated separately.
 const GAME_RUNNING_NOTICE = 'Game is running';
+// Same for VANILLA_WINDOW_LOCK_MESSAGE in vanillaWindow.ts: mods are refused
+// while Launch Vanilla has them parked.
+const VANILLA_WINDOW_NOTICE = 'Vanilla launch in progress';
 
 export function isGameRunningModLockError(err: unknown): boolean {
-  return String(err).includes(GAME_RUNNING_NOTICE);
+  const text = String(err);
+  return text.includes(GAME_RUNNING_NOTICE) || text.includes(VANILLA_WINDOW_NOTICE);
 }
 
 async function withGameRunningWarning<T>(operation: () => Promise<T>): Promise<T> {
@@ -59,7 +63,12 @@ async function withGameRunningWarning<T>(operation: () => Promise<T>): Promise<T
     return await operation();
   } catch (err) {
     if (isGameRunningModLockError(err)) {
-      showToast(i18n.t('common.gameRunningWarning'), { tone: 'warning' });
+      showToast(
+        String(err).includes(VANILLA_WINDOW_NOTICE)
+          ? i18n.t('common.vanillaLaunchWarning')
+          : i18n.t('common.gameRunningWarning'),
+        { tone: 'warning' },
+      );
     }
     throw err;
   }
@@ -116,7 +125,7 @@ export async function importInterchangeSelection(
   document: InterchangeDocument,
   selection: InterchangeImportSelection
 ): Promise<InterchangeImportReport> {
-  return window.electronAPI.interchange.import({ document, selection });
+  return withGameRunningWarning(() => window.electronAPI.interchange.import({ document, selection }));
 }
 
 export async function exportModsForOtherManagers(
@@ -132,24 +141,44 @@ export async function getMods(): Promise<Mod[]> {
 }
 
 export async function enableMod(modId: string): Promise<Mod> {
-  return window.electronAPI.enableMod(modId);
+  return withGameRunningWarning(() => window.electronAPI.enableMod(modId));
 }
 
 export async function disableMod(modId: string): Promise<Mod> {
   return withGameRunningWarning(() => window.electronAPI.disableMod(modId));
 }
 
-export async function deleteMod(modId: string): Promise<void> {
-  return withGameRunningWarning(() => window.electronAPI.deleteMod(modId));
+function toDeleteEntry({ id, size, installedAt }: DeleteModEntry): DeleteModEntry {
+  return { id, size, installedAt };
+}
+
+function warnSkippedDeletes(result: DeleteModsResult): DeleteModsResult {
+  if (result.skipped.length > 0) {
+    showToast(i18n.t('installed.delete.skipped', { count: result.skipped.length }), { tone: 'warning' });
+  }
+  return result;
+}
+
+export async function deleteMod(mod: DeleteModEntry): Promise<DeleteModsResult> {
+  return warnSkippedDeletes(await withGameRunningWarning(() => window.electronAPI.deleteMod(toDeleteEntry(mod))));
+}
+
+/** Delete the file an update replaces. A skip means the old file changed, so
+ *  the update must stop before it restores state onto the new one. */
+export async function deleteReplacedMod(mod: DeleteModEntry): Promise<void> {
+  const { skipped } = await withGameRunningWarning(() => window.electronAPI.deleteMod(toDeleteEntry(mod)));
+  if (skipped.length > 0) throw new Error(i18n.t('installed.delete.replacedChanged'));
 }
 
 export async function deleteMods(
-  modIds: string[],
+  mods: readonly DeleteModEntry[],
   onProgress?: (progress: DeleteModsProgress) => void
-): Promise<void> {
+): Promise<DeleteModsResult> {
   const unsubscribe = onProgress ? window.electronAPI.onDeleteModsProgress(onProgress) : undefined;
   try {
-    await withGameRunningWarning(() => window.electronAPI.deleteMods(modIds));
+    return warnSkippedDeletes(
+      await withGameRunningWarning(() => window.electronAPI.deleteMods(mods.map(toDeleteEntry)))
+    );
   } finally {
     unsubscribe?.();
   }
@@ -200,7 +229,7 @@ export async function listUnknownModFiles(modId: string): Promise<UnknownModFile
 }
 
 export async function editLocalMod(modId: string, args: EditLocalModArgs): Promise<Mod> {
-  return window.electronAPI.editLocalMod(modId, args);
+  return withGameRunningWarning(() => window.electronAPI.editLocalMod(modId, args));
 }
 
 /** Group locally imported VPKs as variants of one mod, or take them back out.
@@ -210,7 +239,7 @@ export async function setLocalVariantGroup(
   modIds: string[],
   target: LocalVariantGroupTarget
 ): Promise<SetLocalVariantGroupResult> {
-  return window.electronAPI.setLocalVariantGroup(modIds, target);
+  return withGameRunningWarning(() => window.electronAPI.setLocalVariantGroup(modIds, target));
 }
 
 export async function restoreLocalVariantGroupReplacement(
@@ -220,7 +249,7 @@ export async function restoreLocalVariantGroupReplacement(
 }
 
 export async function setVariantLabel(modId: string, label: string): Promise<Mod> {
-  return window.electronAPI.setVariantLabel(modId, label);
+  return withGameRunningWarning(() => window.electronAPI.setVariantLabel(modId, label));
 }
 
 export async function setModLockerHero(
@@ -481,7 +510,7 @@ export async function setModPriorityFolder(
   modId: string,
   priority: boolean
 ): Promise<Mod> {
-  return window.electronAPI.setModPriorityFolder(modId, priority);
+  return withGameRunningWarning(() => window.electronAPI.setModPriorityFolder(modId, priority));
 }
 
 export async function backfillGameBananaFileId(
@@ -518,7 +547,7 @@ export async function swapModPriority(modIdA: string, modIdB: string): Promise<M
 export async function importCustomMods(
   items: ImportCustomModArgs[]
 ): Promise<ImportCustomModsBatchResult> {
-  return window.electronAPI.importCustomMods({ items });
+  return withGameRunningWarning(() => window.electronAPI.importCustomMods({ items }));
 }
 
 /** Subscribe to batch-import progress. Returns an unsubscribe function. */
@@ -770,7 +799,7 @@ export async function imprintOneMod(modId: string): Promise<Mod> {
 /** Retroactively imprint the whole installed library in place. Loaded mods are
  *  skipped and reported; per-mod failures are collected (never thrown). */
 export async function imprintAllInstalled(): Promise<ImprintAllInstalledResult> {
-  return window.electronAPI.imprintAllInstalled();
+  return withGameRunningWarning(() => window.electronAPI.imprintAllInstalled());
 }
 
 /** Subscribe to bulk-imprint progress ticks; returns an unsubscribe function. */
@@ -783,7 +812,7 @@ export function onImprintAllInstalledProgress(
 /** No-network dry-run: classify every installed mod into imprint buckets without
  *  mutating any file. Drives the pre-commit confirmation before a bulk imprint. */
 export async function imprintPreflight(): Promise<ImprintPreflightResult> {
-  return window.electronAPI.imprintPreflight();
+  return withGameRunningWarning(() => window.electronAPI.imprintPreflight());
 }
 
 /** Read the full embedded imprint (addoninfo.txt plus the grimoire_meta.json

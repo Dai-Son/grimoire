@@ -39,6 +39,7 @@ import type {
   GameBananaItemRef,
 } from '../types/gamebanana';
 import { isModOutdated, formatDate, parseGameBananaItemUrl } from '../types/gamebanana';
+import type { DeleteModEntry } from '../types/mod';
 import { getModComments, getModUpdates } from '../lib/api';
 import { useAppStore } from '../stores/appStore';
 import AudioPreviewPlayer from './AudioPreviewPlayer';
@@ -65,7 +66,7 @@ interface ModDetailsModalProps {
    *  (Browse only - Installed leaves this undefined), an installed-but-disabled
    *  file row shows an inline "Enable" pill so the user can flip it on without
    *  leaving the Browse tab after downloading. */
-  installedFileStates?: Map<number, { modId: string; enabled: boolean }>;
+  installedFileStates?: Map<number, { modId: string; enabled: boolean; size: number; installedAt: string }>;
   /** Handler invoked when the user clicks the inline "Enable" pill. Receives
    *  the local mod id of the disabled install. */
   onEnableFile?: (modId: string) => void;
@@ -104,9 +105,9 @@ interface ModDetailsModalProps {
   onNavigateNext?: () => void;
   previousLabel?: string;
   nextLabel?: string;
-  /** Browse-only file removal. Receives the local installed mod id that backs
-   *  the GameBanana file row. */
-  onDeleteFile?: (modId: string) => Promise<void> | void;
+  /** Browse-only file removal. Receives the local installed mod, as it looked
+   *  when the row was shown, that backs the GameBanana file row. */
+  onDeleteFile?: (mod: DeleteModEntry) => Promise<void> | void;
   /** 'modal' (centered overlay, the default) or 'sidebar' (docked right-side
    *  panel that lets the user keep browsing the grid). The sidebar shell
    *  (width, full-height, border) is provided by the caller; this component
@@ -265,7 +266,7 @@ function ModDetailsModal({
   // can size to its real proportions instead of being forced into 16:9
   // (which letterboxed portraits and chopped UI screenshots).
   const [imageRatios, setImageRatios] = useState<Record<number, number>>({});
-  const [deleteCandidate, setDeleteCandidate] = useState<{ modId: string; fileName: string } | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<{ mod: DeleteModEntry; fileName: string } | null>(null);
   const [deleteInProgress, setDeleteInProgress] = useState(false);
   const [replaceCandidate, setReplaceCandidate] = useState<
     { fileId: number; fileName: string; installed: boolean; replaced: ReplaceableFile } | null
@@ -702,7 +703,10 @@ function ModDetailsModal({
               icon={Trash2}
               label={`Delete ${file.fileName}`}
               tone="danger"
-              onClick={() => setDeleteCandidate({ modId: installedFileState.modId, fileName: file.fileName })}
+              onClick={() => setDeleteCandidate({
+                mod: { id: installedFileState.modId, size: installedFileState.size, installedAt: installedFileState.installedAt },
+                fileName: file.fileName,
+              })}
               disabled={isBusyThis || deleteInProgress}
             />
           )}
@@ -1193,7 +1197,7 @@ function ModDetailsModal({
                     if (!onDeleteFile || !deleteCandidate) return;
                     setDeleteInProgress(true);
                     try {
-                      await onDeleteFile(deleteCandidate.modId);
+                      await onDeleteFile(deleteCandidate.mod);
                       setDeleteCandidate(null);
                     } finally {
                       setDeleteInProgress(false);

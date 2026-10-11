@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'fs
 import type { SpawnOptions } from 'child_process';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { isSteamRunning } from './launchOptions';
+import { isSteamRunning, resolveLaunchOptionsWrite } from './launchOptions';
 
 const fixture = vi.hoisted(() => ({ command: '' }));
 
@@ -107,5 +107,29 @@ describe('isSteamRunning on linux', () => {
     it('does not fall back to a full-cmdline match', async () => {
         await isSteamRunning();
         expect(pgrepCalls()).toEqual(['-x steam']);
+    });
+});
+
+describe('resolveLaunchOptionsWrite', () => {
+    it('never clears Steam options when the user has not saved the card', () => {
+        expect(resolveLaunchOptionsWrite('', false, '-high -nojoy')).toBeNull();
+    });
+
+    it('clears Steam options when the user saved an empty value on purpose', () => {
+        expect(resolveLaunchOptionsWrite('', true, '-high -nojoy')).toBe('');
+    });
+
+    it('does not create an empty entry when nothing is set', () => {
+        expect(resolveLaunchOptionsWrite('', true, null)).toBeNull();
+        expect(resolveLaunchOptionsWrite('', false, null)).toBeNull();
+    });
+
+    it('writes a saved value that differs from Steam', () => {
+        expect(resolveLaunchOptionsWrite('-high', false, null)).toBe('-high');
+        expect(resolveLaunchOptionsWrite('-high', true, '-nojoy')).toBe('-high');
+    });
+
+    it('skips the write when Steam already has the saved value', () => {
+        expect(resolveLaunchOptionsWrite('-high', true, '-high')).toBeNull();
     });
 });

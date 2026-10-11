@@ -730,7 +730,7 @@ function SwapPanel({
             });
             await useAppStore.getState().loadMods({ silent: true });
             showToast(
-                t('foundry.sound.swap.done', 'Installed "{{name}}" - enable it in the Installed tab', {
+                t('foundry.sound.swap.done', 'Installed and enabled "{{name}}". Find it under Installed.', {
                     name: finalName,
                 }),
                 { tone: 'success', duration: 6000 }
