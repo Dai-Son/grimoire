@@ -74,7 +74,7 @@ export default function Foundry() {
     return (
       <PageLayout>
         <PageHeader
-          title={<Tx k="foundry.header.title" fallback="Foundry" />}
+          title={<Tx k="foundry.header.title" fallback="Door Stuck" />}
           description={
             <Tx
               k="foundry.header.description"
@@ -112,7 +112,7 @@ export default function Foundry() {
     return (
       <PageLayout>
         <PageHeader
-          title={<Tx k="foundry.header.title" fallback="Foundry" />}
+          title={<Tx k="foundry.header.title" fallback="Door Stuck" />}
           description={
             <Tx
               k="foundry.heroes.subtitle"
@@ -177,7 +177,7 @@ export default function Foundry() {
       <div className="flex min-w-0 flex-1 flex-col">
         <PageLayout>
           <PageHeader
-            title={<Tx k="foundry.header.title" fallback="Foundry" />}
+            title={<Tx k="foundry.header.title" fallback="Door Stuck" />}
             description={
               <Tx
                 k="foundry.header.description"

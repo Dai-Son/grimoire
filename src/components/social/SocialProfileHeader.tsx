@@ -289,7 +289,7 @@ export default function SocialProfileHeader({
                   {t('social.header.featured')}
                 </Badge>
               )}
-              {view.has_nsfw && <Badge variant="warning">NSFW</Badge>}
+              {view.has_nsfw && <Badge variant="warning">{t('discover.card.nsfw')}</Badge>}
               {hasCrosshair && (
                 <Badge variant="info">
                   <Crosshair className="w-3 h-3 mr-1 inline" />
@@ -299,7 +299,7 @@ export default function SocialProfileHeader({
               {autoexecCount > 0 && (
                 <Badge variant="warning">
                   <Terminal className="w-3 h-3 mr-1 inline" />
-                  {autoexecCount} autoexec
+                  {t('social.header.autoexecCount', { count: autoexecCount })}
                 </Badge>
               )}
             </div>
@@ -366,7 +366,7 @@ export default function SocialProfileHeader({
                 onClick={handleLikeToggle}
                 disabled={likeBusy || !detail}
                 isLoading={likeBusy}
-                title={signedIn ? (detail?.viewer_has_liked ? 'Unlike' : 'Like') : 'Sign in to like'}
+                title={signedIn ? (detail?.viewer_has_liked ? t('discover.card.unlike') : t('discover.card.like')) : t('discover.card.signInToLike')}
               >
                 <Heart className={`w-3.5 h-3.5 ${detail?.viewer_has_liked ? 'fill-current' : ''}`} />
                 {view.like_count}

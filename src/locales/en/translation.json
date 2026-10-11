@@ -152,7 +152,7 @@
   },
   "foundry": {
     "header": {
-      "title": "Foundry",
+      "title": "Door Stuck",
       "description": "Browse the game's own asset catalog, built offline from your installed files."
     },
     "browseCatalog": "Browse full catalog",
@@ -272,7 +272,7 @@
         "loopOff": "Loop: off",
         "forge": "Forge & install",
         "mp3only": "Audio must be an MP3 file.",
-        "done": "Installed \"{{name}}\" - enable it in the Installed tab",
+        "done": "Installed and enabled \"{{name}}\". Find it under Installed.",
         "poolNote": "Replaces all {{count}} clips in this sound so it always plays your audio.",
         "singleNote": "Replaces this sound with your audio."
       },
@@ -557,9 +557,7 @@
       "asia": "Asia",
       "topPlayers": "Top Players",
       "valveLeaderboardUpdatedHourly": "Valve leaderboard, updated hourly",
-      "noDataForRegion": "No leaderboard data for this region",
-      "winsCount": "{{count}} wins",
-      "matchesCount": "{{count}} matches"
+      "noDataForRegion": "No leaderboard data for this region"
     }
   },
   "servers": {
@@ -581,8 +579,8 @@
         "ready": "Ready"
       }
     },
-    "contentCount_one": "{{count}} content",
-    "contentCount_other": "{{count}} content",
+    "contentCount_one": "{{count}} content item",
+    "contentCount_other": "{{count}} content items",
     "empty": {
       "filtersTitle": "No servers match your filters",
       "filtersDescription": "Try clearing the search, region, or map filter.",
@@ -662,14 +660,14 @@
       "clearIgnoredTitle_other": "Clear {{count}} ignored conflicts?",
       "disableMessage": "{{name}} will be disabled and moved out of the addons folder. You can re-enable it from the Installed page.",
       "disableTitle": "Disable this mod?",
-      "ignoreAllHint": "Reversible — you can restore any pair individually with Unignore.",
+      "ignoreAllHint": "Reversible: you can restore any pair individually with Unignore.",
       "ignoreAllMessage": "Every currently active conflict pair will move to the Ignored section below.",
       "ignoreAllTitle_one": "Ignore all {{count}} conflict?",
       "ignoreAllTitle_other": "Ignore all {{count}} conflicts?"
     },
     "empty": {
-      "activeWithIgnored_one": "No active conflicts. {{count}} pair currently ignored — see below.",
-      "activeWithIgnored_other": "No active conflicts. {{count}} pairs currently ignored — see below.",
+      "activeWithIgnored_one": "No active conflicts. {{count}} pair currently ignored, see below.",
+      "activeWithIgnored_other": "No active conflicts. {{count}} pairs currently ignored, see below.",
       "noActive": "No active conflicts.",
       "noConflicts": {
         "title": "No Conflicts Detected",
@@ -724,6 +722,7 @@
     "reorder": {
       "alreadyWins": "{{name}} already wins this conflict",
       "enableBothHint": "Enable both mods to set their load order.",
+      "globalLocked": "Global mods load before everything else. Turn off Global to change this.",
       "hint": "The mod that loads first overrides shared files. This sets the pair adjacent in load order.",
       "makeWinner": "Make {{name}} win (load it before {{other}})",
       "resolveByLoadOrder": "Resolve by load order",
@@ -923,7 +922,6 @@
       }
     },
     "preferences": {
-      "hideOutdated": "Hide Outdated Mods",
       "expandLocker": "Expand Locker cards by default",
       "switchVariants": "Switch variants instead of stacking them",
       "enableAfterDownload": "Enable mods after download",
@@ -981,7 +979,7 @@
       "archivesRemoved_one": "Removed {{count}} archive.",
       "archivesRemoved_other": "Removed {{count}} archives.",
       "cleanupAddons": "Cleanup Addons Folder",
-      "cleanupDescription": "Remove leftover archive downloads (zip, 7z).",
+      "cleanupDescription": "Remove leftover archive downloads (zip, 7z, rar).",
       "cleanup": "Cleanup"
     },
     "downloadServers": {
@@ -1052,7 +1050,6 @@
       "createFile": "Create File"
     },
     "toggles": {
-      "hideOutdated": "Hide Browse mods older than the current game version.",
       "expandLocker": "Start Locker list view with hero cards expanded.",
       "switchVariants": "Installing a new variant disables the old one. Off keeps both active. Updates always replace the old file.",
       "enableAfterDownload": "Enable mods as soon as they finish downloading. Stays disabled if no slot is free.",
@@ -1097,7 +1094,8 @@
     },
     "confirm": {
       "clearActive": "Remove the active crosshair from autoexec.cfg? Your saved presets will be kept.\n\nNote: an in-progress game session keeps its current crosshair until you restart the game.",
-      "deletePreset": "Delete this crosshair preset?"
+      "deletePreset": "Delete this crosshair preset?",
+      "deleteActivePreset": "Delete this crosshair preset? It is currently applied, so this also removes the crosshair from autoexec.cfg."
     },
     "controls": {
       "color": "Crosshair color",
@@ -2448,7 +2446,8 @@
       "reportIssuePlaceholder": "What's the issue? (optional)",
       "submit": "Submit",
       "reportSubmitted": "Report submitted.",
-      "report": "Report"
+      "report": "Report",
+      "autoexecCount": "{{count}} autoexec"
     },
     "picker": {
       "publishAProfile": "Publish a profile",
@@ -2707,7 +2706,7 @@
       "discoverNew_other": "{{count}} new published profiles.",
       "servers": "Browse and join Deadworks community servers.",
       "locker": "Active cosmetic skins, organized by hero.",
-      "foundry": "Browse the game's asset catalog: textures, icons, and heroes.",
+      "foundry": "Browse the game's assets, and swap a hero's sounds for your own.",
       "crosshair": "Custom crosshair editor.",
       "autoexec": "Console commands that run at game launch.",
       "stats": "Match history and personal stats.",
@@ -3070,7 +3069,10 @@
   "discover": {
     "header": {
       "description": "Mod profiles published by other Grimoire users.",
-      "signInHint": "Sign in to like and publish; importing works without an account."
+      "signInHint": "Sign in to like and publish; importing works without an account.",
+      "signedInAs": "Signed in as {{name}}",
+      "profileCount_one": "{{count}} profile",
+      "profileCount_other": "{{count}} profiles"
     },
     "tabs": {
       "top": "Top",
@@ -3095,7 +3097,13 @@
       "description": "Be the first to publish: open Profiles, pick one, and click Publish to Discover."
     },
     "card": {
-      "featured": "Featured"
+      "featured": "Featured",
+      "nsfw": "NSFW",
+      "like": "Like",
+      "unlike": "Unlike",
+      "likeProfile": "Like profile",
+      "unlikeProfile": "Unlike profile",
+      "signInToLike": "Sign in to like"
     },
     "pagination": {
       "loadingMore": "Loading more...",
