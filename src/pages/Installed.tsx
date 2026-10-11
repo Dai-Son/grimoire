@@ -134,6 +134,7 @@ import { LockerOverridesModal } from '../components/LockerOverridesModal';
 import { ViewModeToggle, EmptyState, ConfirmModal, type ViewMode } from '../components/common/PageComponents';
 import { InstalledSection } from '../components/installed/InstalledSection';
 import { useInstalledSelection } from '../components/installed/useInstalledSelection';
+import { entrySelectionIds, visibleSelectionEntries } from '../components/installed/selection';
 import { useShiftKey } from '../components/installed/useShiftKey';
 import { HeroTagLabel } from '../components/installed/chips';
 import { ModCard } from '../components/installed/ModCard';
@@ -896,12 +897,8 @@ export default function Installed() {
   const shiftHeld = useShiftKey();
   const [enabledCollapsed, setEnabledCollapsed] = useState(false);
   const [disabledCollapsed, setDisabledCollapsed] = useState(false);
-  const { selectedIds, setSelectedIds, toggleSelection } = useInstalledSelection(() =>
-    [...(enabledCollapsed ? [] : visibleEnabled), ...(disabledCollapsed ? [] : visibleDisabled)]
-      .map((entry) => ({
-        key: entry.key,
-        ids: entry.kind === 'single' ? [entry.mod.id] : entry.variants.map((variant) => variant.id),
-      }))
+  const { selectedIds, setSelectedIds, toggleSelection } = useInstalledSelection(mods, () =>
+    visibleSelectionEntries(visibleEnabled, visibleDisabled, enabledCollapsed, disabledCollapsed)
   );
   // Per-item progress for the in-flight bulk enable/disable. While set, the
   // action bar swaps its buttons for a "Enabling 2/5…" line so users see
@@ -3435,10 +3432,7 @@ export default function Installed() {
   const copyEntryShareCode = useStableCallback((mod: Mod) => void handleCopyShareCode(mod));
   const selectToggleEntry = useStableCallback((entry: ModEntry, shiftKey: boolean) => {
     setSelectMode(true);
-    toggleSelection({
-      key: entry.key,
-      ids: entry.kind === 'single' ? [entry.mod.id] : entry.variants.map((variant) => variant.id),
-    }, shiftKey);
+    toggleSelection({ key: entry.key, ids: entrySelectionIds(entry) }, shiftKey);
   });
 
   if (!activeDeadlockPath) {
@@ -3669,12 +3663,10 @@ export default function Installed() {
   };
 
   const selectAllVisible = () => {
-    const ids = new Set<string>();
-    for (const entry of [...visibleEnabled, ...visibleDisabled]) {
-      if (entry.kind === 'single') ids.add(entry.mod.id);
-      else entry.variants.forEach((v) => ids.add(v.id));
-    }
-    setSelectedIds(ids);
+    setSelectedIds(new Set(
+      visibleSelectionEntries(visibleEnabled, visibleDisabled, enabledCollapsed, disabledCollapsed)
+        .flatMap((entry) => entry.ids)
+    ));
   };
 
   // Keep the Ctrl/Cmd+A handler (installed above) pointed at the latest
