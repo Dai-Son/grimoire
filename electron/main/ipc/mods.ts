@@ -32,6 +32,7 @@ import { notifyModChanges } from '../services/modChangeObservation';
 import { classifyAbilitySoundsFromVpk } from '../services/abilitySounds';
 import { migrateIgnoredConflictKeysForMods } from '../services/conflicts';
 import { isLockerManaged } from '../services/lockerVpk';
+import { readStash } from '../services/launch';
 import { retargetProfileModSha } from '../services/profiles';
 import {
     detectUnknownModCacheMatches,
@@ -350,7 +351,9 @@ ipcMain.handle('get-mods', async (): Promise<Mod[]> => {
             `[Metadata] Skipping orphan prune: ${deadlockPath} has no game/citadel/gameinfo.gi, so this scan (${mods.length} VPKs) is not evidence of what is installed.`
         );
     }
-    if (!settings.devMode && trustworthyScan) {
+    // A vanilla session has user mods parked outside every scan root, so the scan
+    // is not evidence of what is installed until the restore.
+    if (!settings.devMode && trustworthyScan && !(await readStash())) {
         // Prune against ALL scanned files (including managed VPKs) so we don't
         // wipe their metadata before filtering them out of the list below.
         pruneOrphanMetadata(new Set(mods.map((m) => m.metaKey)), deadlockPath);

@@ -116,7 +116,7 @@ import {
     type ForgeInstallRequest,
 } from './services/forgeBridge';
 import { installForgeVpk } from './services/download';
-import { backfillMissingMetadataHashes } from './services/metadata';
+import { backfillMissingMetadataHashes, recoverPrunedIdentities } from './services/metadata';
 import { backfillImprintedFlags } from './services/imprintMods';
 import { destroyDiscordRpc } from './services/discordRpc';
 import { startSaltIngest } from './services/saltIngest';
@@ -191,6 +191,11 @@ async function backfillStartupMetadataHashes(): Promise<void> {
         }
     } catch (error) {
         console.warn('[Metadata] Startup SHA-256 backfill failed:', error);
+    }
+
+    const recovered = recoverPrunedIdentities();
+    if (recovered > 0) {
+        console.log(`[Metadata] Recovered identity for ${recovered} mod${recovered === 1 ? '' : 's'} from pre-prune backups`);
     }
 
     try {

@@ -372,6 +372,68 @@ function isValidSha256(value: string | undefined): boolean {
 }
 
 /**
+ * Give back the identity the orphan prune took from files that were only
+ * parked, not gone (Launch Vanilla used to hide Global and overflow mods from
+ * it). Each current row with a hash but no identity is matched, by sha256 only
+ * (slots get reused, which is what the prune guards against), against the
+ * pre-prune backups, newest first; the first identified row with that hash
+ * fills in the fields the current row lacks. One synchronous load-merge-save,
+ * so no other metadata write can interleave. Never throws; returns the number
+ * of rows recovered.
+ */
+export function recoverPrunedIdentities(): number {
+    try {
+        const metadata = loadMetadata();
+        const wanted = new Map<string, ModMetadata[]>();
+        for (const [key, row] of Object.entries(metadata)) {
+            if (key.startsWith('locker:') || !isValidSha256(row.sha256) || hasModIdentity(row)) continue;
+            const sha = row.sha256!.toLowerCase();
+            wanted.set(sha, [...(wanted.get(sha) ?? []), row]);
+        }
+        if (wanted.size === 0) return 0;
+
+        const dir = join(dirname(getMetadataPath()), 'mod-metadata.backups');
+        if (!existsSync(dir)) return 0;
+        const backups = readdirSync(dir)
+            .filter((name) => name.endsWith('_pre-prune.json'))
+            .sort()
+            .reverse();
+
+        let recovered = 0;
+        for (const name of backups) {
+            if (wanted.size === 0) break;
+            let backup: ModMetadataMap;
+            try {
+                backup = JSON.parse(readFileSync(join(dir, name), 'utf-8')) as ModMetadataMap;
+            } catch {
+                continue;
+            }
+            for (const old of Object.values(backup)) {
+                if (!old || !isValidSha256(old.sha256) || !hasModIdentity(old)) continue;
+                const sha = old.sha256!.toLowerCase();
+                const rows = wanted.get(sha);
+                if (!rows) continue;
+                for (const row of rows) {
+                    for (const [field, value] of Object.entries(old)) {
+                        // A load-order slot from the old row would point at a slot that may be reused.
+                        if (field === 'lastPriority' || field === 'sha256') continue;
+                        const target = row as Record<string, unknown>;
+                        if (target[field] === undefined) target[field] = value;
+                    }
+                    recovered++;
+                }
+                wanted.delete(sha);
+            }
+        }
+        if (recovered > 0) saveMetadata(metadata);
+        return recovered;
+    } catch (error) {
+        console.warn('[Metadata] Pruned-identity recovery failed:', error);
+        return 0;
+    }
+}
+
+/**
  * Copy the metadata sidecar into mod-metadata.backups/<timestamp>_<tag>.json
  * before a batch identity mutation (e.g. the DMM import), so a bad batch can
  * be rolled back by restoring the file. Keeps the newest `keep` backups.
@@ -445,13 +507,17 @@ export const deleteModMetadata = removeModMetadata;
  *
  * metaKeyFor produces three shapes: `grimoire/<file>` for the priority root,
  * `addonsN/<file>` for an overflow root, and a bare `<file>` otherwise, which
- * can be sitting in either citadel/addons or citadel/addons/.disabled.
+ * can be sitting in either citadel/addons or citadel/addons/.disabled. A
+ * prefixed key also counts as live when Launch Vanilla has it parked in
+ * `.disabled/<folder>/<file>` (see stashSlotPath in launch.ts).
  */
 function resolveMetaKeyPaths(deadlockPath: string, key: string): string[] {
     const citadel = join(deadlockPath, 'game', 'citadel');
     const slash = key.indexOf('/');
     if (slash !== -1) {
-        return [join(citadel, key.slice(0, slash), key.slice(slash + 1))];
+        const folder = key.slice(0, slash);
+        const file = key.slice(slash + 1);
+        return [join(citadel, folder, file), join(citadel, 'addons', '.disabled', folder, file)];
     }
     return [join(citadel, 'addons', key), join(citadel, 'addons', '.disabled', key)];
 }

@@ -7,6 +7,7 @@ import { moveVdataSnapshot } from './vdataCheck';
 import { assertActiveModsSafety, moveToDisabledLibrary } from './modSafetyAudit';
 import { runExclusiveModMutation } from './mods';
 import { migrateModMetadata } from './metadata';
+import { beginVanillaWindow, endVanillaWindow } from './vanillaWindow';
 import { getUserDataPath } from '../utils/paths';
 import {
     getAddonsPath,
@@ -319,8 +320,8 @@ export interface RestoreResult {
  *   will fail the rename with EBUSY/EPERM. We retry a few times then give up
  *   and leave the stash in place so the user can hit "Restore now" after they
  *   quit the game.
- * - If a stashed file is already back in its origin folder (user manually moved
- *   it), we skip rather than clobber.
+ * - If something else took a stashed file's origin slot, we don't clobber it:
+ *   the parked file moves into the disabled library with its metadata row.
  * - If the stashed file vanished from disabled/ (user deleted it), we skip.
  * - A stashed archive without an approved safety verdict never returns to a
  *   game folder, and never counts as a failure (the gate can't prompt here, so
@@ -338,74 +339,97 @@ export async function restoreFromStash(
     let skipped = 0;
     const failed: string[] = [];
 
-    for (const archive of stashedArchives(stash)) {
-        const { fileName, folder } = archive;
-        const from = stashSlotPath(disabledPath, folder, fileName);
-        const targetDir = originFolderPath(deadlockPath, folder);
-        const to = join(targetDir, fileName);
-        const chunks = archive.chunks.filter((chunk) => existsSync(stashSlotPath(disabledPath, folder, chunk)));
-        skipped += archive.chunks.length - chunks.length;
+    const archives = stashedArchives(stash);
+    let handled = 0;
 
-        if (!existsSync(from)) {
-            skipped += 1 + chunks.length;
-            continue;
-        }
-        if (existsSync(to)) {
-            // Collision — don't clobber whatever's already there.
-            skipped += 1 + chunks.length;
-            continue;
-        }
+    // The whole restore is one mutation batch so nothing interleaves with it.
+    // Nothing inside may call a locked mods.ts function (the lock is not
+    // reentrant): moveToDisabledLibrary and migrateModMetadata are plain I/O.
+    try {
+        await runExclusiveModMutation(async () => {
+            for (const [index, archive] of archives.entries()) {
+                const { fileName, folder } = archive;
+                handled = index;
+                const from = stashSlotPath(disabledPath, folder, fileName);
+                const targetDir = originFolderPath(deadlockPath, folder);
+                const to = join(targetDir, fileName);
+                const chunks = archive.chunks.filter((chunk) => existsSync(stashSlotPath(disabledPath, folder, chunk)));
+                skipped += archive.chunks.length - chunks.length;
 
-        const report = await inspectVpkSafety(from);
-        if (report.verdict !== 'incomplete' && !(await isModSafetyTrusted(report))) {
-            try {
-                await runExclusiveModMutation(async () => {
-                    const dest = await moveToDisabledLibrary(
-                        deadlockPath,
-                        from,
-                        chunks.map((chunk) => stashSlotPath(disabledPath, folder, chunk))
-                    );
-                    migrateModMetadata([{ from: metaKeyFor(from), to: metaKeyFor(dest) }]);
-                });
-                skipped += 1 + chunks.length;
-            } catch (err) {
-                console.error(`[launch] Failed to move ${fileName} to the disabled library:`, err);
-                failed.push(fileName);
-            }
-            continue;
-        }
-        // The origin folder may have been emptied (overflow) but should still
-        // exist; recreate it defensively so the rename lands.
-        await fs.mkdir(targetDir, { recursive: true });
+                if (!existsSync(from)) {
+                    skipped += 1 + chunks.length;
+                    continue;
+                }
 
-        for (const name of [fileName, ...chunks]) {
-            let ok = false;
-            let lastErr: unknown;
-            for (let attempt = 0; attempt < RESTORE_MAX_ATTEMPTS; attempt++) {
-                try {
-                    await fs.rename(stashSlotPath(disabledPath, folder, name), join(targetDir, name));
-                    moveSafetySnapshot(stashSlotPath(disabledPath, folder, name), join(targetDir, name));
-                    moveVdataSnapshot(stashSlotPath(disabledPath, folder, name), join(targetDir, name));
-                    ok = true;
-                    break;
-                } catch (err) {
-                    lastErr = err;
-                    if (attempt < RESTORE_MAX_ATTEMPTS - 1) {
-                        await sleep(RESTORE_RETRY_DELAY_MS);
+                const parkInLibrary = async (): Promise<void> => {
+                    try {
+                        const dest = await moveToDisabledLibrary(
+                            deadlockPath,
+                            from,
+                            chunks.map((chunk) => stashSlotPath(disabledPath, folder, chunk))
+                        );
+                        migrateModMetadata([{ from: metaKeyFor(from), to: metaKeyFor(dest) }]);
+                        skipped += 1 + chunks.length;
+                    } catch (err) {
+                        console.error(`[launch] Failed to move ${fileName} to the disabled library:`, err);
+                        failed.push(fileName);
+                    }
+                };
+
+                if (existsSync(to)) {
+                    // The slot was taken while the mod was parked. Never clobber
+                    // it, and never strand the parked file in .disabled/<folder>
+                    // with its stash record gone: move it into the library.
+                    await parkInLibrary();
+                    continue;
+                }
+
+                const report = await inspectVpkSafety(from);
+                if (report.verdict !== 'incomplete' && !(await isModSafetyTrusted(report))) {
+                    await parkInLibrary();
+                    continue;
+                }
+                // The origin folder may have been emptied (overflow) but should still
+                // exist; recreate it defensively so the rename lands.
+                await fs.mkdir(targetDir, { recursive: true });
+
+                for (const name of [fileName, ...chunks]) {
+                    let ok = false;
+                    let lastErr: unknown;
+                    for (let attempt = 0; attempt < RESTORE_MAX_ATTEMPTS; attempt++) {
+                        try {
+                            await fs.rename(stashSlotPath(disabledPath, folder, name), join(targetDir, name));
+                            moveSafetySnapshot(stashSlotPath(disabledPath, folder, name), join(targetDir, name));
+                            moveVdataSnapshot(stashSlotPath(disabledPath, folder, name), join(targetDir, name));
+                            ok = true;
+                            break;
+                        } catch (err) {
+                            lastErr = err;
+                            if (attempt < RESTORE_MAX_ATTEMPTS - 1) {
+                                await sleep(RESTORE_RETRY_DELAY_MS);
+                            }
+                        }
+                    }
+                    if (ok) {
+                        restored++;
+                    } else {
+                        console.error(`[launch] Failed to restore ${name}:`, lastErr);
+                        failed.push(name);
                     }
                 }
             }
-            if (ok) {
-                restored++;
-            } else {
-                console.error(`[launch] Failed to restore ${name}:`, lastErr);
-                failed.push(name);
-            }
-        }
+        }, { exemptFromVanillaWindow: true });
+    } catch (err) {
+        console.error('[launch] Vanilla restore batch failed:', err);
+        for (const { fileName } of archives.slice(handled)) failed.push(fileName);
     }
 
-    if (failed.length === 0) {
-        await deleteStash();
+    try {
+        if (failed.length === 0) {
+            await deleteStash();
+        }
+    } finally {
+        endVanillaWindow();
     }
 
     return { restored, skipped, failed };
@@ -447,7 +471,11 @@ function scheduleMidLaunchRestore(
         }
 
         const stash = await readStash();
-        if (!stash) return; // Already restored (e.g. user clicked Restore now).
+        if (!stash) {
+            // Already restored (e.g. user clicked Restore now).
+            endVanillaWindow();
+            return;
+        }
 
         const result = await restoreFromStash(deadlockPath, stash);
         onComplete?.(result);
@@ -578,16 +606,21 @@ export async function launchVanilla({
     }
 
     let stash: VanillaStash;
+    beginVanillaWindow();
     try {
         stash = await stashEnabledMods(deadlockPath);
     } catch (err) {
         // Mid-stash failure — try to restore whatever made it into disabled/
         // before rethrowing, so we don't leave the user with half-moved files.
-        const current = await readStash();
-        if (current) {
-            await restoreFromStash(deadlockPath, current);
+        try {
+            const current = await readStash();
+            if (current) {
+                await restoreFromStash(deadlockPath, current);
+            }
+        } finally {
+            endVanillaWindow();
+            launchInFlight = false;
         }
-        launchInFlight = false;
         throw err;
     }
 

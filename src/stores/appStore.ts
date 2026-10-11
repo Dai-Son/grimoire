@@ -534,7 +534,9 @@ const ENABLE_CAP_NOTICE =
   'You can have at most 990 mods enabled at once. Disable one to make room.';
 const isEnableCapError = (err: unknown): boolean => /mods enabled at once/.test(String(err));
 const GAME_RUNNING_NOTICE = 'Game is running';
-const isGameRunningModLockError = (err: unknown): boolean => String(err).includes(GAME_RUNNING_NOTICE);
+const VANILLA_WINDOW_NOTICE = 'Vanilla launch in progress';
+const isGameRunningModLockError = (err: unknown): boolean =>
+  String(err).includes(GAME_RUNNING_NOTICE) || String(err).includes(VANILLA_WINDOW_NOTICE);
 
 export const useAppStore = create<AppState>((set, get) => ({
   // Initial state

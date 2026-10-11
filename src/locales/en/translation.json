@@ -74,6 +74,7 @@
   "common": {
     "view": "View",
     "gameRunningWarning": "Game is running. Close Deadlock to change loaded mods.",
+    "vanillaLaunchWarning": "Mods come back once Deadlock has started. Try again in a moment.",
     "actions": {
       "cancel": "Cancel",
       "clear": "Clear",

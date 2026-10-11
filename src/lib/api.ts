@@ -49,9 +49,13 @@ import i18n from '../i18n';
 // boundary as a raw string, so it must NOT be translated. The user-facing
 // toast is translated separately.
 const GAME_RUNNING_NOTICE = 'Game is running';
+// Same for VANILLA_WINDOW_LOCK_MESSAGE in vanillaWindow.ts: mods are refused
+// while Launch Vanilla has them parked.
+const VANILLA_WINDOW_NOTICE = 'Vanilla launch in progress';
 
 export function isGameRunningModLockError(err: unknown): boolean {
-  return String(err).includes(GAME_RUNNING_NOTICE);
+  const text = String(err);
+  return text.includes(GAME_RUNNING_NOTICE) || text.includes(VANILLA_WINDOW_NOTICE);
 }
 
 async function withGameRunningWarning<T>(operation: () => Promise<T>): Promise<T> {
@@ -59,7 +63,12 @@ async function withGameRunningWarning<T>(operation: () => Promise<T>): Promise<T
     return await operation();
   } catch (err) {
     if (isGameRunningModLockError(err)) {
-      showToast(i18n.t('common.gameRunningWarning'), { tone: 'warning' });
+      showToast(
+        String(err).includes(VANILLA_WINDOW_NOTICE)
+          ? i18n.t('common.vanillaLaunchWarning')
+          : i18n.t('common.gameRunningWarning'),
+        { tone: 'warning' },
+      );
     }
     throw err;
   }
@@ -132,7 +141,7 @@ export async function getMods(): Promise<Mod[]> {
 }
 
 export async function enableMod(modId: string): Promise<Mod> {
-  return window.electronAPI.enableMod(modId);
+  return withGameRunningWarning(() => window.electronAPI.enableMod(modId));
 }
 
 export async function disableMod(modId: string): Promise<Mod> {

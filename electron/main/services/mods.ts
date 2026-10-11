@@ -12,6 +12,7 @@ import { loadSettings } from './settings';
 import { assertVpkSafety, moveSafetySnapshot, forgetSafetySnapshot } from './modSafety';
 import { forgetVdataSnapshot, moveVdataSnapshot } from './vdataCheck';
 import { notifyModChanges } from './modChangeObservation';
+import { isVanillaWindowActive, VANILLA_WINDOW_LOCK_MESSAGE } from './vanillaWindow';
 import { isStaleModTemp, modTempPath } from './modTemps';
 import {
     assertCanMoveLoadedGameMod,
@@ -1003,13 +1004,20 @@ export function setModPriorityFolder(deadlockPath: string, modId: string, priori
  * Non-reentrant: a locked function must NOT call another locked one (it would
  * wait on a queue slot it already holds). The one internal cross-call,
  * swapModPriority -> reorder, goes through the unlocked reorderModsImpl.
+ *
+ * While Launch Vanilla has user mods parked, every batch refuses when it reaches
+ * the front of the queue (the files it would act on are not where the scan
+ * expects). Only the restore, which `exemptFromVanillaWindow` marks, runs.
  */
 let modMutationQueue: Promise<unknown> = Promise.resolve();
-function withModMutationLock<T>(fn: () => Promise<T>): Promise<T> {
+function withModMutationLock<T>(fn: () => Promise<T>, exemptFromVanillaWindow = false): Promise<T> {
     // Compute the game-running state once per locked batch and park it for the
     // duration, so applyProfile's per-mod snapshot syncs don't each spawn a
     // pgrep/tasklist (turning N+M+2 spawns into 1).
     const scoped = async (): Promise<T> => {
+        if (!exemptFromVanillaWindow && isVanillaWindowActive()) {
+            throw new Error(VANILLA_WINDOW_LOCK_MESSAGE);
+        }
         await beginModMutationRunningScope();
         try {
             return await fn();
@@ -1049,8 +1057,11 @@ export function enableMod(deadlockPath: string, modId: string): Promise<Mod> {
  * enableMod/disableMod/reorderMods: those would re-enter the queue this batch
  * already holds and deadlock.
  */
-export function runExclusiveModMutation<T>(fn: () => Promise<T>): Promise<T> {
-    return withModMutationLock(fn);
+export function runExclusiveModMutation<T>(
+    fn: () => Promise<T>,
+    opts?: { exemptFromVanillaWindow?: boolean }
+): Promise<T> {
+    return withModMutationLock(fn, opts?.exemptFromVanillaWindow);
 }
 
 /** Unlocked enable, for use only inside a runExclusiveModMutation batch. */
