@@ -61,6 +61,34 @@ describe('Vanilla launch mutation window', () => {
         await expect(runExclusiveModMutation(async () => 'ran')).resolves.toBe('ran');
     });
 
+    it('waits for a batch already running before it stashes anything', async () => {
+        const { root, addons } = gameDirs();
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const batch = runExclusiveModMutation(async () => {
+            await gate;
+            return existsSync(join(addons, 'pak02_dir.vpk'));
+        });
+
+        const launch = launchVanilla({
+            deadlockPath: root,
+            beforeLaunch: async () => {
+                throw new Error('steam unavailable');
+            },
+        });
+        const settled = launch.catch(() => undefined);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        expect(isVanillaWindowActive()).toBe(false);
+        expect(await readStash()).toBeNull();
+
+        release();
+        await expect(batch).resolves.toBe(true);
+        await expect(launch).rejects.toThrow('steam unavailable');
+        await settled;
+        expect(existsSync(join(addons, 'pak02_dir.vpk'))).toBe(true);
+    });
+
     it('lets the restore run inside the window without deadlocking on the lock it holds', async () => {
         const { root, addons } = gameDirs();
         const stash = await stashEnabledMods(root);

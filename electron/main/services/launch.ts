@@ -606,9 +606,15 @@ export async function launchVanilla({
     }
 
     let stash: VanillaStash;
-    beginVanillaWindow();
     try {
-        stash = await stashEnabledMods(deadlockPath);
+        // Inside the lock so batches already running finish first and queued ones see the window.
+        stash = await runExclusiveModMutation(
+            async () => {
+                beginVanillaWindow();
+                return stashEnabledMods(deadlockPath);
+            },
+            { exemptFromVanillaWindow: true }
+        );
     } catch (err) {
         // Mid-stash failure — try to restore whatever made it into disabled/
         // before rethrowing, so we don't leave the user with half-moved files.

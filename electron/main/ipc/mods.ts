@@ -314,14 +314,15 @@ ipcMain.handle('get-mods', async (): Promise<Mod[]> => {
     if (!deadlockPath) {
         return [];
     }
-    const mods = await scanModsAfterMutations(deadlockPath);
+    let mods = await scanModsAfterMutations(deadlockPath);
     const settings = loadSettings();
     // Hide Grimoire-managed Locker VPKs (hero cards + ability sounds). They're
     // driven solely through the Locker pickers and are auto-enabled + pinned to
     // the front of the load order (services/lockerVpk.ts), so surfacing them in
     // the Installed list would only let the user disable or reorder them and
     // silently break their applied cosmetics.
-    const visible = mods.filter((m) => !isLockerManaged(m.metaKey));
+    const isVisible = (m: Mod): boolean => !isLockerManaged(m.metaKey);
+    let visible = mods.filter(isVisible);
     // Pre-warm the VPK parse cache across the worker pool for mods whose lazy
     // classifications will parse inside enrichMod below. enrichMod stays sync;
     // its parseVpkDirectoryCached calls hit the warmed cache instead of
@@ -330,6 +331,10 @@ ipcMain.handle('get-mods', async (): Promise<Mod[]> => {
     const warmPaths = visible.filter(needsVpkParseForEnrich).map((m) => m.path);
     if (warmPaths.length > 0) {
         await parseVpkDirectoriesAsync(warmPaths);
+        // A mutation can rename slots during the parse. enrichMod persists
+        // classifications by metaKey, so rescan and enrich with no await between.
+        mods = await scanModsAfterMutations(deadlockPath);
+        visible = mods.filter(isVisible);
     }
     const enriched = visible.map(enrichMod);
     notifyModChanges();

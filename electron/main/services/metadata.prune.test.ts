@@ -230,6 +230,23 @@ describe('recoverPrunedIdentities', () => {
         expect(after['pak04_dir.vpk']).toEqual({ sha256: SHA_A, modName: 'Chosen Name' });
     });
 
+    it('recovers a Global row the folder heal already stamped with priorityMod', () => {
+        writeBackup('2026-10-01T00-00-00-000Z', {
+            'grimoire/pak05_dir.vpk': { sha256: SHA_A, modName: 'Top Bar HUD', gameBananaId: 703330, priorityMod: true, lastPriority: 5 },
+        });
+        writeBackup('2026-10-05T00-00-00-000Z', { 'grimoire/pak05_dir.vpk': { sha256: SHA_A, priorityMod: true } });
+        saveMetadata({ 'grimoire/pak05_dir.vpk': { sha256: SHA_A, priorityMod: true } });
+
+        expect(recoverPrunedIdentities()).toBe(1);
+
+        expect(loadMetadata()['grimoire/pak05_dir.vpk']).toEqual({
+            sha256: SHA_A,
+            priorityMod: true,
+            modName: 'Top Bar HUD',
+            gameBananaId: 703330,
+        });
+    });
+
     it('only reads pre-prune backups', () => {
         writeBackup('2026-10-01T00-00-00-000Z', { 'pak01_dir.vpk': { sha256: SHA_A, modName: 'From DMM' } }, 'dmm-import');
         saveMetadata({ 'pak09_dir.vpk': { sha256: SHA_A } });

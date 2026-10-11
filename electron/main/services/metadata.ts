@@ -409,11 +409,13 @@ function isValidSha256(value: string | undefined): boolean {
  * of rows recovered.
  */
 export function recoverPrunedIdentities(): number {
+    // The folder heal stamps priorityMod on every Global file before recovery runs, so it says nothing about identity here.
+    const hasRecoverableIdentity = (row: ModMetadata): boolean => hasModIdentity({ ...row, priorityMod: undefined });
     try {
         const metadata = loadMetadata();
         const wanted = new Map<string, ModMetadata[]>();
         for (const [key, row] of Object.entries(metadata)) {
-            if (key.startsWith('locker:') || !isValidSha256(row.sha256) || hasModIdentity(row)) continue;
+            if (key.startsWith('locker:') || !isValidSha256(row.sha256) || hasRecoverableIdentity(row)) continue;
             const sha = row.sha256!.toLowerCase();
             wanted.set(sha, [...(wanted.get(sha) ?? []), row]);
         }
@@ -436,7 +438,7 @@ export function recoverPrunedIdentities(): number {
                 continue;
             }
             for (const old of Object.values(backup)) {
-                if (!old || !isValidSha256(old.sha256) || !hasModIdentity(old)) continue;
+                if (!old || !isValidSha256(old.sha256) || !hasRecoverableIdentity(old)) continue;
                 const sha = old.sha256!.toLowerCase();
                 const rows = wanted.get(sha);
                 if (!rows) continue;

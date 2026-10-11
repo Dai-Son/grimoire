@@ -125,7 +125,7 @@ export async function importInterchangeSelection(
   document: InterchangeDocument,
   selection: InterchangeImportSelection
 ): Promise<InterchangeImportReport> {
-  return window.electronAPI.interchange.import({ document, selection });
+  return withGameRunningWarning(() => window.electronAPI.interchange.import({ document, selection }));
 }
 
 export async function exportModsForOtherManagers(
@@ -222,7 +222,7 @@ export async function listUnknownModFiles(modId: string): Promise<UnknownModFile
 }
 
 export async function editLocalMod(modId: string, args: EditLocalModArgs): Promise<Mod> {
-  return window.electronAPI.editLocalMod(modId, args);
+  return withGameRunningWarning(() => window.electronAPI.editLocalMod(modId, args));
 }
 
 /** Group locally imported VPKs as variants of one mod, or take them back out.
@@ -232,7 +232,7 @@ export async function setLocalVariantGroup(
   modIds: string[],
   target: LocalVariantGroupTarget
 ): Promise<SetLocalVariantGroupResult> {
-  return window.electronAPI.setLocalVariantGroup(modIds, target);
+  return withGameRunningWarning(() => window.electronAPI.setLocalVariantGroup(modIds, target));
 }
 
 export async function restoreLocalVariantGroupReplacement(
@@ -242,7 +242,7 @@ export async function restoreLocalVariantGroupReplacement(
 }
 
 export async function setVariantLabel(modId: string, label: string): Promise<Mod> {
-  return window.electronAPI.setVariantLabel(modId, label);
+  return withGameRunningWarning(() => window.electronAPI.setVariantLabel(modId, label));
 }
 
 export async function setModLockerHero(
@@ -503,7 +503,7 @@ export async function setModPriorityFolder(
   modId: string,
   priority: boolean
 ): Promise<Mod> {
-  return window.electronAPI.setModPriorityFolder(modId, priority);
+  return withGameRunningWarning(() => window.electronAPI.setModPriorityFolder(modId, priority));
 }
 
 export async function backfillGameBananaFileId(
@@ -540,7 +540,7 @@ export async function swapModPriority(modIdA: string, modIdB: string): Promise<M
 export async function importCustomMods(
   items: ImportCustomModArgs[]
 ): Promise<ImportCustomModsBatchResult> {
-  return window.electronAPI.importCustomMods({ items });
+  return withGameRunningWarning(() => window.electronAPI.importCustomMods({ items }));
 }
 
 /** Subscribe to batch-import progress. Returns an unsubscribe function. */
@@ -792,7 +792,7 @@ export async function imprintOneMod(modId: string): Promise<Mod> {
 /** Retroactively imprint the whole installed library in place. Loaded mods are
  *  skipped and reported; per-mod failures are collected (never thrown). */
 export async function imprintAllInstalled(): Promise<ImprintAllInstalledResult> {
-  return window.electronAPI.imprintAllInstalled();
+  return withGameRunningWarning(() => window.electronAPI.imprintAllInstalled());
 }
 
 /** Subscribe to bulk-imprint progress ticks; returns an unsubscribe function. */
@@ -805,7 +805,7 @@ export function onImprintAllInstalledProgress(
 /** No-network dry-run: classify every installed mod into imprint buckets without
  *  mutating any file. Drives the pre-commit confirmation before a bulk imprint. */
 export async function imprintPreflight(): Promise<ImprintPreflightResult> {
-  return window.electronAPI.imprintPreflight();
+  return withGameRunningWarning(() => window.electronAPI.imprintPreflight());
 }
 
 /** Read the full embedded imprint (addoninfo.txt plus the grimoire_meta.json
