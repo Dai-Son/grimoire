@@ -82,6 +82,7 @@ interface ModWithThumbnail {
   variantLabel?: string;
   fileDescription?: string;
   sourceFileName?: string;
+  priorityMod?: boolean;
 }
 
 function getVariantLabel(mod: ModWithThumbnail): string | null {
@@ -260,6 +261,7 @@ export default function Conflicts() {
           variantLabel: mod.variantLabel,
           fileDescription: mod.fileDescription,
           sourceFileName: mod.sourceFileName,
+          priorityMod: mod.priorityMod,
         };
         map.set(mod.id, info);
         map.set(info.identity, info);
@@ -821,8 +823,8 @@ export default function Conflicts() {
                 )}
                 <ConflictReorderActions
                   conflict={conflict}
-                  modA={{ id: modA.id, name: modA.name }}
-                  modB={{ id: modB.id, name: modB.name }}
+                  modA={{ id: modA.id, name: modA.name, global: modA.priorityMod }}
+                  modB={{ id: modB.id, name: modB.name, global: modB.priorityMod }}
                   orderedEnabledIds={orderedEnabledIds}
                   busy={pendingPair === getConflictIgnoreKey(conflict)}
                   onSetWinner={(winnerId, loserId) => handleSetWinner(conflict, winnerId, loserId)}
@@ -976,8 +978,8 @@ export default function Conflicts() {
 
                 <ConflictReorderActions
                   conflict={conflict}
-                  modA={{ id: modA.id, name: modA.name }}
-                  modB={{ id: modB.id, name: modB.name }}
+                  modA={{ id: modA.id, name: modA.name, global: modA.priorityMod }}
+                  modB={{ id: modB.id, name: modB.name, global: modB.priorityMod }}
                   orderedEnabledIds={orderedEnabledIds}
                   busy={pendingPair === getConflictIgnoreKey(conflict)}
                   onSetWinner={(winnerId, loserId) => handleSetWinner(conflict, winnerId, loserId)}

@@ -723,6 +723,7 @@
     "reorder": {
       "alreadyWins": "{{name}} already wins this conflict",
       "enableBothHint": "Enable both mods to set their load order.",
+      "globalLocked": "Global mods load before everything else. Turn off Global to change this.",
       "hint": "The mod that loads first overrides shared files. This sets the pair adjacent in load order.",
       "makeWinner": "Make {{name}} win (load it before {{other}})",
       "resolveByLoadOrder": "Resolve by load order",
