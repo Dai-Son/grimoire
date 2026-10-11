@@ -22,7 +22,7 @@ import {
     beginModMutationRunningScope,
     endModMutationRunningScope,
 } from './gameSessionMods';
-import type { DeleteModsProgress } from '../../../src/types/mod';
+import type { DeleteModEntry, DeleteModsProgress, DeleteModsResult } from '../../../src/types/mod';
 
 /** Verbose mod-mutation trace, gated on the `verboseModTrace` setting. Lands in
  *  main.log (captured by the diagnostic report) so a desync between the UI and
@@ -1358,56 +1358,43 @@ export async function assertReplacementSafety(deadlockPath: string, modIds: stri
 }
 
 /**
- * Delete a mod completely (async)
- */
-export function deleteMod(deadlockPath: string, modId: string): Promise<void> {
-    return withModMutationLock(() => deleteModImpl(deadlockPath, modId), { healPath: deadlockPath });
-}
-
-async function deleteModImpl(deadlockPath: string, modId: string): Promise<void> {
-    const mods = await scanMods(deadlockPath);
-    await syncRunningGameModSnapshotFromMods(mods);
-    const targetMod = mods.find((m) => m.id === modId);
-
-    if (!targetMod) {
-        throw new Error(`Mod not found: ${modId}`);
-    }
-    assertCanMoveLoadedGameMod(targetMod);
-
-    await deleteVpkSet(targetMod.path);
-
-    // Metadata is keyed by metaKey. If we leave it behind, the next mod that
-    // is assigned the same slot will inherit the deleted mod's gameBananaId,
-    // thumbnail, category, etc. via setModMetadata's merge.
-    removeModMetadata(targetMod.metaKey);
-}
-
-/**
- * Delete several mods as one locked batch with a single scan up front (deleteMod
- * per id rescans the whole library for every file). Deleting never renames the
- * survivors, so the scan's ids stay valid across the batch. Ids missing from the
- * scan are already gone and count as done. A loaded mod refuses the whole batch
- * before anything is deleted, like applyProfile.
+ * Delete mods as one locked batch with a single scan up front. Ids are reused
+ * slot paths, so each entry is checked against the fresh scan: a mod that is
+ * gone or whose size or installedAt changed since it was picked is skipped and
+ * reported instead of deleting whatever sits at the id now. Deleting never
+ * renames the survivors, so the scan's ids stay valid across the batch. A
+ * loaded mod refuses the whole batch before anything is deleted, like
+ * applyProfile.
  */
 export function deleteMods(
     deadlockPath: string,
-    modIds: string[],
+    entries: DeleteModEntry[],
     onProgress?: (progress: DeleteModsProgress) => void
-): Promise<void> {
+): Promise<DeleteModsResult> {
     return withModMutationLock(async () => {
         const mods = await scanMods(deadlockPath);
         await syncRunningGameModSnapshotFromMods(mods);
         const byId = new Map(mods.map((m) => [m.id, m]));
-        const targets = modIds.map((id) => byId.get(id));
-        assertCanMoveLoadedGameMods(targets.filter((m) => m !== undefined));
+        const resolved = entries.map((entry) => {
+            const mod = byId.get(entry.id);
+            return mod && mod.size === entry.size && mod.installedAt === entry.installedAt ? mod : undefined;
+        });
+        assertCanMoveLoadedGameMods(resolved.filter((m) => m !== undefined));
 
-        for (const [i, target] of targets.entries()) {
+        const skipped: string[] = [];
+        for (const [i, target] of resolved.entries()) {
             if (target) {
                 await deleteVpkSet(target.path);
+                // Metadata is keyed by metaKey. Left behind, the next mod
+                // assigned the same slot would inherit the deleted mod's
+                // gameBananaId, thumbnail, category, etc. via setModMetadata's merge.
                 removeModMetadata(target.metaKey);
+            } else {
+                skipped.push(entries[i].id);
             }
-            onProgress?.({ done: i + 1, total: targets.length });
+            onProgress?.({ done: i + 1, total: entries.length });
         }
+        return { skipped };
     }, { healPath: deadlockPath });
 }
 

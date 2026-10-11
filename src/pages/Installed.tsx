@@ -101,7 +101,7 @@ import {
   type GlobalVpkRestoreSnapshot,
 } from '../lib/vpkRestore';
 import { modRestoreKey } from '../lib/soloRestore';
-import { findReplacementTargetIdsAfterInstall } from '../lib/replacementCleanup';
+import { findReplacementTargetIdsAfterInstall, modsByIds } from '../lib/replacementCleanup';
 import { planLocalVariantUpdateRestore } from '../lib/localVariantUpdateRestore';
 import { buildCachedModDetails, canUseCachedModDetails } from '../lib/cachedModDetails';
 import {
@@ -1904,6 +1904,7 @@ export default function Installed() {
         installedBeforeCleanup = useAppStore.getState().mods;
         targetIds = replacementTargets.map((mod) => mod.id);
       }
+      const targetMods = modsByIds(targetIds, installedBeforeCleanup);
 
       // A GameBanana update is normally forbidden from entering a local
       // variant group. The narrow restore IPC proves this is a replacement for
@@ -1947,7 +1948,7 @@ export default function Installed() {
         }
       }
       if (localGroupRestore) await restoreLocalVariantGroupReplacement(localGroupRestore);
-      for (const targetId of targetIds) await deleteModApi(targetId);
+      for (const target of targetMods) await deleteModApi(target);
 
       await loadMods({ force: true });
 
@@ -2208,6 +2209,7 @@ export default function Installed() {
             cleanupTargets,
             batch.fileId,
           );
+          const targetMods = modsByIds(targetIds, installedAfterDownload);
           const groupedReplacement = batch.snapshots.some((snapshot) => !!snapshot.localGroupId);
           let localGroupRestore = planLocalVariantUpdateRestore(
             batch.snapshots,
@@ -2240,7 +2242,7 @@ export default function Installed() {
             }
           }
           if (localGroupRestore) await restoreLocalVariantGroupReplacement(localGroupRestore);
-          for (const targetId of targetIds) await deleteModApi(targetId);
+          for (const target of targetMods) await deleteModApi(target);
           completed.push({
             gameBananaId: batch.gameBananaId,
             gameBananaFileId: batch.fileId,
@@ -2553,7 +2555,7 @@ export default function Installed() {
   const openBulkDeleteConfirm = () => {
     if (selectedMods.length === 0) return;
     setModToDelete({
-      ids: selectedMods.map((m) => m.id),
+      mods: selectedMods,
       name: `${selectedMods.length} mod${selectedMods.length === 1 ? '' : 's'}`,
       isGroup: false,
       isBulk: true,
@@ -3277,12 +3279,12 @@ export default function Installed() {
   const deleteEntry = useStableCallback((entry: ModEntry) => {
     if (entry.kind === 'group') {
       setModToDelete({
-        ids: entry.variants.map((v) => v.id),
+        mods: entry.variants,
         name: entry.primary.name,
         isGroup: true,
       });
     } else {
-      setModToDelete({ ids: [entry.mod.id], name: entry.mod.name, isGroup: false });
+      setModToDelete({ mods: [entry.mod], name: entry.mod.name, isGroup: false });
     }
   });
   const editLocalEntry = useStableCallback((mod: Mod) => setLocalEditMod(mod));
@@ -4761,7 +4763,7 @@ export default function Installed() {
             onReorderVariantTo={(source, neighbor, position) =>
               reorderVariantTo(source, neighbor, position)
             }
-            onDeleteVariant={(variant) => deleteMod(variant.id)}
+            onDeleteVariant={deleteMod}
             onRenameVariant={(variant, label) => setVariantLabel(variant.id, label)}
             onOpenModDetails={
               liveEntry.primary.gameBananaId

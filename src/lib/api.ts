@@ -1,4 +1,4 @@
-import type { Mod, AppSettings, DeleteModsProgress, GlobalModType, UnknownModFilterGuess, UnknownModDetectionProgress, ApplyUnknownModMatchArgs, ApplyUnknownCustomModArgs, AssociateUnknownModArgs, UnknownModFileList, EditLocalModArgs, MergeModsArgs, UnmergeModResult, ExtractMergeSourceResult, AddMergeSourcesResult, MergeSourceReplacement, ReplaceMergeSourcesResult, ImprintAllInstalledResult, ImprintInstalledProgress, ImprintPreflightResult, ImprintDetails, PeekImprintResult, ApplyHeroCardResult, HeroAbilitySlot, AbilitySlot, AbilitySoundParams, ActiveHeroSound, ApplyHeroSoundResult, ActiveHeroColor, ApplyHeroColorResult, ApplyHeroPrismResult, ActiveTrippySkin, ApplyTrippySkinResult, ApplyTrippyVfxResult, TrippySpriteOptions, TrippySpriteResult, TrippyVfxChoice, LockerOverview, LockerCardThumbnail, LockerClearScope, AppearanceSurface } from '../types/mod';
+import type { Mod, AppSettings, DeleteModEntry, DeleteModsProgress, DeleteModsResult, GlobalModType, UnknownModFilterGuess, UnknownModDetectionProgress, ApplyUnknownModMatchArgs, ApplyUnknownCustomModArgs, AssociateUnknownModArgs, UnknownModFileList, EditLocalModArgs, MergeModsArgs, UnmergeModResult, ExtractMergeSourceResult, AddMergeSourcesResult, MergeSourceReplacement, ReplaceMergeSourcesResult, ImprintAllInstalledResult, ImprintInstalledProgress, ImprintPreflightResult, ImprintDetails, PeekImprintResult, ApplyHeroCardResult, HeroAbilitySlot, AbilitySlot, AbilitySoundParams, ActiveHeroSound, ApplyHeroSoundResult, ActiveHeroColor, ApplyHeroColorResult, ApplyHeroPrismResult, ActiveTrippySkin, ApplyTrippySkinResult, ApplyTrippyVfxResult, TrippySpriteOptions, TrippySpriteResult, TrippyVfxChoice, LockerOverview, LockerCardThumbnail, LockerClearScope, AppearanceSurface } from '../types/mod';
 import type {
   InterchangeDocument,
   InterchangeExportReport,
@@ -148,17 +148,30 @@ export async function disableMod(modId: string): Promise<Mod> {
   return withGameRunningWarning(() => window.electronAPI.disableMod(modId));
 }
 
-export async function deleteMod(modId: string): Promise<void> {
-  return withGameRunningWarning(() => window.electronAPI.deleteMod(modId));
+function toDeleteEntry({ id, size, installedAt }: DeleteModEntry): DeleteModEntry {
+  return { id, size, installedAt };
+}
+
+function warnSkippedDeletes(result: DeleteModsResult): DeleteModsResult {
+  if (result.skipped.length > 0) {
+    showToast(i18n.t('installed.delete.skipped', { count: result.skipped.length }), { tone: 'warning' });
+  }
+  return result;
+}
+
+export async function deleteMod(mod: DeleteModEntry): Promise<DeleteModsResult> {
+  return warnSkippedDeletes(await withGameRunningWarning(() => window.electronAPI.deleteMod(toDeleteEntry(mod))));
 }
 
 export async function deleteMods(
-  modIds: string[],
+  mods: readonly DeleteModEntry[],
   onProgress?: (progress: DeleteModsProgress) => void
-): Promise<void> {
+): Promise<DeleteModsResult> {
   const unsubscribe = onProgress ? window.electronAPI.onDeleteModsProgress(onProgress) : undefined;
   try {
-    await withGameRunningWarning(() => window.electronAPI.deleteMods(modIds));
+    return warnSkippedDeletes(
+      await withGameRunningWarning(() => window.electronAPI.deleteMods(mods.map(toDeleteEntry)))
+    );
   } finally {
     unsubscribe?.();
   }

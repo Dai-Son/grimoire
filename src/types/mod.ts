@@ -721,6 +721,15 @@ export interface DeleteModsProgress {
   total: number;
 }
 
+// What a delete names: ids are reused slot paths, so size + installedAt prove
+// the mod at the id is still the one that was picked.
+export type DeleteModEntry = Pick<Mod, 'id' | 'size' | 'installedAt'>;
+
+export interface DeleteModsResult {
+  /** Ids whose mod was gone or had changed since it was picked. Nothing was deleted for them. */
+  skipped: string[];
+}
+
 export interface MergeModsArgs {
   modIds: string[];
   name: string;

@@ -9,7 +9,7 @@ vi.mock('electron', () => ({ app: { getPath: () => h.userData } }));
 vi.mock('./launch', () => ({ isDeadlockRunning: async () => h.running, readStash: async () => null }));
 vi.mock('./modSafety', () => ({ assertVpkSafety: h.assertVpkSafety, moveSafetySnapshot: vi.fn(), forgetSafetySnapshot: vi.fn() }));
 
-import { deleteMod, deleteMods, enableMod, healModFolders, installEnabledVpk, reorderMods, scanMods, setModPriority, swapModPriority } from './mods';
+import { deleteMods, enableMod, healModFolders, installEnabledVpk, reorderMods, scanMods, setModPriority, swapModPriority } from './mods';
 import { getModMetadata, saveMetadata, setModMetadata } from './metadata';
 import { clearLoadedGameMods } from './gameSessionMods';
 import type { DeleteModsProgress } from '../../../src/types/mod';
@@ -42,6 +42,7 @@ const contents = async (folder: string) => {
     return out;
 };
 const idAt = async (path: string) => (await scanMods(root)).find((m) => m.path === path)!.id;
+const entryAt = async (path: string) => (await scanMods(root)).find((m) => m.path === path)!;
 
 describe('chunked mods move and delete as one set', () => {
     it('reorder swaps a chunked mod with a single-file one', async () => {
@@ -87,7 +88,7 @@ describe('chunked mods move and delete as one set', () => {
     it('delete removes the chunks with the directory file', async () => {
         await put(addons, { 'pak04_dir.vpk': 'd', 'pak04_000.vpk': 'd0', 'pak04_001.vpk': 'd1' });
 
-        await deleteMod(root, await idAt(join(addons, 'pak04_dir.vpk')));
+        await deleteMods(root, [await entryAt(join(addons, 'pak04_dir.vpk'))]);
 
         expect(await contents(addons)).toEqual({});
     });
@@ -106,28 +107,53 @@ describe('chunked mods move and delete as one set', () => {
 });
 
 describe('deleteMods', () => {
-    it('deletes every target with its chunks and metadata, one tick per id, ids already gone included', async () => {
+    it('deletes every target with its chunks and metadata, one tick per entry', async () => {
         await put(addons, { 'pak01_dir.vpk': 'a', 'pak02_dir.vpk': 'b', 'pak02_000.vpk': 'b0', 'pak03_dir.vpk': 'keep' });
         await put(disabled, { 'skin_dir.vpk': 's' });
-        const a = await idAt(join(addons, 'pak01_dir.vpk'));
-        const b = await idAt(join(addons, 'pak02_dir.vpk'));
-        const skin = await idAt(join(disabled, 'skin_dir.vpk'));
+        const a = await entryAt(join(addons, 'pak01_dir.vpk'));
+        const b = await entryAt(join(addons, 'pak02_dir.vpk'));
+        const skin = await entryAt(join(disabled, 'skin_dir.vpk'));
         setModMetadata('pak01_dir.vpk', { modName: 'A' });
         const ticks: DeleteModsProgress[] = [];
 
-        await deleteMods(root, [a, 'already-gone', b, skin], (progress) => ticks.push(progress));
+        const result = await deleteMods(root, [a, b, skin], (progress) => ticks.push(progress));
 
+        expect(result).toEqual({ skipped: [] });
         expect(await contents(addons)).toEqual({ 'pak03_dir.vpk': 'keep' });
         expect(await contents(disabled)).toEqual({});
         expect(getModMetadata('pak01_dir.vpk')).toBeUndefined();
-        expect(ticks).toEqual([1, 2, 3, 4].map((done) => ({ done, total: 4 })));
+        expect(ticks).toEqual([1, 2, 3].map((done) => ({ done, total: 3 })));
+    });
+
+    it('skips and reports an entry that is gone or whose mod changed behind the same id', async () => {
+        await put(addons, { 'pak01_dir.vpk': 'a', 'pak02_dir.vpk': 'b', 'pak03_dir.vpk': 'c', 'pak04_dir.vpk': 'd' });
+        const a = await entryAt(join(addons, 'pak01_dir.vpk'));
+        const swappedSize = await entryAt(join(addons, 'pak02_dir.vpk'));
+        const swappedTime = await entryAt(join(addons, 'pak03_dir.vpk'));
+        const d = await entryAt(join(addons, 'pak04_dir.vpk'));
+        setModMetadata('pak02_dir.vpk', { modName: 'B' });
+        await fs.writeFile(join(addons, 'pak02_dir.vpk'), 'a different mod');
+        const later = new Date(Date.parse(swappedTime.installedAt) + 60_000);
+        await fs.utimes(join(addons, 'pak03_dir.vpk'), later, later);
+        const ticks: DeleteModsProgress[] = [];
+
+        const result = await deleteMods(
+            root,
+            [a, swappedSize, swappedTime, { id: 'already-gone', size: 1, installedAt: d.installedAt }, d],
+            (progress) => ticks.push(progress),
+        );
+
+        expect(result).toEqual({ skipped: [swappedSize.id, swappedTime.id, 'already-gone'] });
+        expect(await contents(addons)).toEqual({ 'pak02_dir.vpk': 'a different mod', 'pak03_dir.vpk': 'c' });
+        expect(getModMetadata('pak02_dir.vpk')).toEqual(expect.objectContaining({ modName: 'B' }));
+        expect(ticks).toEqual([1, 2, 3, 4, 5].map((done) => ({ done, total: 5 })));
     });
 
     it('refuses the whole batch before deleting anything when the game has a target loaded', async () => {
         await put(addons, { 'pak01_dir.vpk': 'loaded' });
         await put(disabled, { 'skin_dir.vpk': 's' });
-        const loaded = await idAt(join(addons, 'pak01_dir.vpk'));
-        const skin = await idAt(join(disabled, 'skin_dir.vpk'));
+        const loaded = await entryAt(join(addons, 'pak01_dir.vpk'));
+        const skin = await entryAt(join(disabled, 'skin_dir.vpk'));
         h.running = true;
 
         await expect(deleteMods(root, [skin, loaded])).rejects.toThrow('Game is running');

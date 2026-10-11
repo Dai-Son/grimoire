@@ -13,7 +13,6 @@ import {
     enableMod,
     enableModUnlocked,
     disableMod,
-    deleteMod,
     deleteMods,
     assertReplacementSafety,
     setModPriority,
@@ -80,7 +79,7 @@ import { planLocalVariantReplacementRestore } from '../services/localVariantRepl
 import { resolveImportedVariantLabel } from '../../../src/lib/customModImport';
 import type { ImportCustomModArgs, ImportCustomModsBatchArgs, ImportCustomModsBatchResult, ImportCustomModResult, ImportCustomModsProgress, ImportSoulContainerGlbArgs, LocalVariantGroupTarget, PreviewSoulContainerGlbArgs, RestoreLocalVariantGroupReplacementArgs, SetLocalVariantGroupResult, SoulContainerPreview, ImportSpiritUrnGlbArgs, PreviewSpiritUrnGlbArgs, SpiritUrnPreview } from '../../../src/types/electron';
 import type { VpkExportResult, HeroSoundSwapRequest } from '../../../src/types/foundry';
-import type { AbilitySoundClassification, AddMergeSourcesResult, MergeSourceReplacement, ReplaceMergeSourcesResult, ApplyUnknownCustomModArgs, ApplyUnknownModMatchArgs, AssociateUnknownModArgs, EditLocalModArgs, GlobalModType, LockerHeroSource, MergeModsArgs, Mod as WireMod, SoulContainerImportInfo, SoundSwapInfo, UrnImportInfo, UnmergeModResult, ExtractMergeSourceResult, UnknownModFileList, ImprintPreflightResult, ImprintDetails, PeekImprintResult } from '../../../src/types/mod';
+import type { AbilitySoundClassification, AddMergeSourcesResult, DeleteModEntry, DeleteModsResult, MergeSourceReplacement, ReplaceMergeSourcesResult, ApplyUnknownCustomModArgs, ApplyUnknownModMatchArgs, AssociateUnknownModArgs, EditLocalModArgs, GlobalModType, LockerHeroSource, MergeModsArgs, Mod as WireMod, SoulContainerImportInfo, SoundSwapInfo, UrnImportInfo, UnmergeModResult, ExtractMergeSourceResult, UnknownModFileList, ImprintPreflightResult, ImprintDetails, PeekImprintResult } from '../../../src/types/mod';
 
 const unknownDetectionControllers = new Map<string, AbortController>();
 
@@ -417,22 +416,22 @@ ipcMain.handle('reveal-mod-in-folder', async (_, modId: string): Promise<void> =
 });
 
 // delete-mod
-ipcMain.handle('delete-mod', async (_, modId: string): Promise<void> => {
+ipcMain.handle('delete-mod', async (_, entry: DeleteModEntry): Promise<DeleteModsResult> => {
     const deadlockPath = getActiveDeadlockPath();
     if (!deadlockPath) {
         throw new Error('No Deadlock path configured');
     }
-    await deleteMod(deadlockPath, modId);
+    return deleteMods(deadlockPath, [entry]);
 });
 
-// delete-mods: the Installed delete dialog's ids as one locked batch. Streams a
-// tick per removed mod to the requesting renderer via 'delete-mods-progress'.
-ipcMain.handle('delete-mods', async (event, modIds: string[]): Promise<void> => {
+// delete-mods: the Installed delete dialog's entries as one locked batch. Streams a
+// tick per entry to the requesting renderer via 'delete-mods-progress'.
+ipcMain.handle('delete-mods', async (event, entries: DeleteModEntry[]): Promise<DeleteModsResult> => {
     const deadlockPath = getActiveDeadlockPath();
     if (!deadlockPath) {
         throw new Error('No Deadlock path configured');
     }
-    await deleteMods(deadlockPath, modIds, (progress) => event.sender.send('delete-mods-progress', progress));
+    return deleteMods(deadlockPath, entries, (progress) => event.sender.send('delete-mods-progress', progress));
 });
 
 ipcMain.handle('assert-replacement-safety', async (_, modIds: string[]): Promise<void> => {
@@ -573,7 +572,10 @@ ipcMain.handle(
             throw new Error('Download completed, but the installed replacement VPK could not be found. The unknown mod was kept.');
         }
 
-        await deleteMod(deadlockPath, target.id);
+        const { skipped } = await deleteMods(deadlockPath, [target]);
+        if (skipped.length > 0) {
+            throw new Error('The unknown mod changed during the download. It was kept.');
+        }
 
         const finalFileNames: string[] = [];
         if (wasEnabled) {

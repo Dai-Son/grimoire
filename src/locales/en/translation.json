@@ -1454,7 +1454,9 @@
       "bulkConfirm": "Delete {{name}}",
       "groupConfirm_one": "Delete {{count}}",
       "groupConfirm_other": "Delete {{count}}",
-      "progress": "Deleting {{done}} of {{total}}..."
+      "progress": "Deleting {{done}} of {{total}}...",
+      "skipped_one": "{{count}} mod changed since you selected it and was not deleted.",
+      "skipped_other": "{{count}} mods changed since you selected them and were not deleted."
     },
     "details": {
       "loading": "Loading mod details...",

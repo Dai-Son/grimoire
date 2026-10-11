@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Mod, AppSettings, AppearanceSurface, DeleteModsProgress, EditLocalModArgs, GlobalModType } from '../types/mod';
+import type { Mod, AppSettings, AppearanceSurface, DeleteModEntry, DeleteModsProgress, EditLocalModArgs, GlobalModType } from '../types/mod';
 import type { ImportCustomModArgs, ImportCustomModResult, LocalVariantGroupTarget } from '../types/electron';
 import { getActiveDeadlockPath } from '../lib/appSettings';
 import { setDateFormat } from '../lib/dateFormat';
@@ -437,10 +437,10 @@ interface AppState {
    *  batch callers can stop early. */
   toggleMod: (modId: string) => Promise<boolean>;
   clearModsNotice: () => void;
-  deleteMod: (modId: string) => Promise<void>;
+  deleteMod: (mod: DeleteModEntry) => Promise<void>;
   /** Deletes the ids as one locked main-process batch, with a progress tick
    *  per removed mod. Never throws. */
-  deleteMods: (modIds: string[], onProgress?: (progress: DeleteModsProgress) => void) => Promise<void>;
+  deleteMods: (mods: readonly DeleteModEntry[], onProgress?: (progress: DeleteModsProgress) => void) => Promise<void>;
   setModPriority: (modId: string, priority: number) => Promise<void>;
   swapModPriority: (modIdA: string, modIdB: string) => Promise<void>;
   reorderMods: (orderedIds: string[]) => Promise<void>;
@@ -886,22 +886,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   clearModsNotice: () => set({ modsNotice: null }),
 
-  // Delete a mod.
-  // "Mod not found" is treated as idempotent success: the file is already
-  // gone (most often because healModFolders renamed a colliding
-  // pakNN file between the renderer's last load and this delete), so the
-  // desired end state is already reached. Surfacing it as modsError would
-  // replace the whole Installed page with the full-page error screen,
-  // which is especially bad mid-batch in bulk delete.
-  deleteMod: async (modId: string) => {
+  // Delete a mod. Main skips it when it is gone or changed since it was
+  // picked, so the local list is resynced instead of guessed.
+  deleteMod: async (mod) => {
     try {
-      await api.deleteMod(modId);
-      set({ mods: get().mods.filter((m) => m.id !== modId) });
-    } catch (err) {
-      if (/Mod not found/.test(String(err))) {
-        set({ mods: get().mods.filter((m) => m.id !== modId) });
+      const { skipped } = await api.deleteMod(mod);
+      if (skipped.length > 0) {
+        await get().loadMods({ silent: true, force: true });
         return;
       }
+      set({ mods: get().mods.filter((m) => m.id !== mod.id) });
+    } catch (err) {
       if (isGameRunningModLockError(err)) {
         return;
       }
@@ -910,12 +905,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // A failed batch may have deleted some files before stopping, so resync
-  // instead of guessing which ids are gone.
-  deleteMods: async (modIds, onProgress) => {
+  // instead of guessing which ids are gone. The same goes for skipped entries.
+  deleteMods: async (mods, onProgress) => {
     try {
-      await api.deleteMods(modIds, onProgress);
-      const removed = new Set(modIds);
+      const { skipped } = await api.deleteMods(mods, onProgress);
+      const removed = new Set(mods.map((m) => m.id));
+      for (const id of skipped) removed.delete(id);
       set({ mods: get().mods.filter((m) => !removed.has(m.id)) });
+      if (skipped.length > 0) await get().loadMods({ silent: true, force: true });
     } catch (err) {
       await get().loadMods({ silent: true, force: true });
       if (isGameRunningModLockError(err)) return;

@@ -2,7 +2,9 @@ import type { ModSafetyPrompt, InstalledModSafety } from './modSafety';
 import type {
     Mod,
     AppSettings,
+    DeleteModEntry,
     DeleteModsProgress,
+    DeleteModsResult,
     GlobalModType,
     ModConflict,
     UnknownModDetectionProgress,
@@ -900,8 +902,8 @@ export interface ElectronAPI {
     getMods: () => Promise<Mod[]>;
     enableMod: (modId: string) => Promise<Mod>;
     disableMod: (modId: string) => Promise<Mod>;
-    deleteMod: (modId: string) => Promise<void>;
-    deleteMods: (modIds: string[]) => Promise<void>;
+    deleteMod: (entry: DeleteModEntry) => Promise<DeleteModsResult>;
+    deleteMods: (entries: DeleteModEntry[]) => Promise<DeleteModsResult>;
     onDeleteModsProgress: (callback: (progress: DeleteModsProgress) => void) => () => void;
     assertReplacementSafety: (modIds: string[]) => Promise<void>;
     revealModInFolder: (modId: string) => Promise<void>;
