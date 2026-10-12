@@ -145,7 +145,7 @@ Windows installers are not yet code-signed, so SmartScreen will show an
 anyway** to proceed. Free Authenticode signing through the SignPath
 Foundation OSS program is being pursued.
 
-## Code signing policy
+## **PENDING** Code signing policy
 
 Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
 
