@@ -83,6 +83,16 @@ describe('checkOutdatedVdata', () => {
         expect(h.send).not.toHaveBeenCalled();
     });
 
+    it('ignores editor-only fields that community compilers strip', async () => {
+        const rebuilt = await vpk('pak01_dir.vpk', [HEROES]);
+        const stale = await vpk('pak02_dir.vpk', [HEROES]);
+        const editorOnly = ['_include', 'hero_base/_editor', 'hero_atlas/_editor/folder_name'];
+        respond({ [rebuilt]: [report(editorOnly)], [stale]: [report([...editorOnly, 'hero_ratking'])] });
+        await vdata.checkOutdatedVdata(dir, [rebuilt, stale]);
+        expect(vdata.outdatedVdataSnapshot(rebuilt)).toBeUndefined();
+        expect(vdata.outdatedVdataSnapshot(stale)).toEqual([{ entry: HEROES, missing: 1, sample: ['hero_ratking'] }]);
+    });
+
     it('keeps other results when one mod fails to open', async () => {
         const broken = await vpk('pak01_dir.vpk', [HEROES]);
         const stale = await vpk('pak02_dir.vpk', [HEROES]);
