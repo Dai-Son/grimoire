@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -54,8 +54,17 @@ describe('dialog directory memory', () => {
         });
     });
 
+    it('falls back to Downloads when the remembered directory was deleted', async () => {
+        writeFileSync(join(mocks.userData, 'settings.json'), JSON.stringify({ lastDialogDirectory: join(mocks.userData, 'Gone') }));
+
+        await showSaveDialog({ defaultPath: 'mod_dir.vpk' });
+
+        expect(mocks.showSaveDialog).toHaveBeenCalledWith({ defaultPath: join(mocks.downloads, 'mod_dir.vpk') });
+    });
+
     it('uses a directory persisted by an earlier process', async () => {
         const directory = join(mocks.userData, 'Mods');
+        mkdirSync(directory);
         writeFileSync(join(mocks.userData, 'settings.json'), JSON.stringify({ lastDialogDirectory: directory }));
 
         await showOpenDialog({ properties: ['openDirectory'] });
@@ -82,6 +91,7 @@ describe('dialog directory memory', () => {
 
     it('remembers a selected directory itself and joins the next suggested filename', async () => {
         const directory = join(mocks.userData, 'My Mods');
+        mkdirSync(directory);
         mocks.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [directory] });
 
         await showOpenDialog({ properties: ['openDirectory'] });
@@ -96,6 +106,7 @@ describe('dialog directory memory', () => {
 
     it('remembers a selected file parent for the next open dialog', async () => {
         const directory = join(mocks.userData, 'Imports');
+        mkdirSync(directory);
         const result = { canceled: false, filePaths: [join(directory, 'mod.vpk')] };
         mocks.showOpenDialog.mockResolvedValueOnce(result);
 

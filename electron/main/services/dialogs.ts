@@ -1,10 +1,14 @@
 import { app, dialog } from 'electron';
+import { existsSync } from 'fs';
 import { dirname, isAbsolute, join } from 'path';
 import { loadSettings, saveSettings } from './settings';
 
 function defaultDialogPath(defaultPath?: string): string {
     if (defaultPath && isAbsolute(defaultPath)) return defaultPath;
-    const directory = loadSettings().lastDialogDirectory ?? app.getPath('downloads');
+    // A deleted folder makes the Windows dialog open in its parent with the
+    // folder's name in the filename box.
+    const remembered = loadSettings().lastDialogDirectory;
+    const directory = remembered && existsSync(remembered) ? remembered : app.getPath('downloads');
     return defaultPath ? join(directory, defaultPath) : directory;
 }
 
