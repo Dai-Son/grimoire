@@ -54,6 +54,13 @@ export function checkOutdatedVdata(deadlockPath: string, modPaths: string[]): Pr
     return queue;
 }
 
+/** Valve's build keeps these but the game never reads them, and community
+ *  compilers strip them: `_editor` blocks and the root `_include` list of
+ *  `.vdata_inc` sources, which pak01 doesn't ship. */
+function isEditorOnly(field: string): boolean {
+    return field === '_include' || /(^|\/)_editor(\/|$)/.test(field);
+}
+
 function shown(modPaths: string[]): string {
     return JSON.stringify(modPaths.map((path) => outdatedVdataSnapshot(path) ?? null));
 }
@@ -109,6 +116,7 @@ async function checkBatch(base: string, paths: string[], stats: Map<string, File
     const byMod = new Map(results.map((result) => [result.mod, result]));
     for (const path of paths) {
         const outdated = (byMod.get(path)?.reports ?? [])
+            .map((r) => ({ entry: r.entry, missing: r.missing.filter((field) => !isEditorOnly(field)) }))
             .filter((r) => r.missing.length > 0)
             .map((r) => ({ entry: r.entry, missing: r.missing.length, sample: r.missing.slice(0, SAMPLE_SIZE) }));
         snapshots.set(path, { ...stats.get(path)!, outdated });
