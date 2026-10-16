@@ -86,7 +86,10 @@ try {
     assert.equal(runtime.packaged, true);
     assert.equal(resolve(runtime.appPath), join(packaged, resources, 'app.asar'));
     assert.equal(resolve(runtime.userData), userData);
-    assert.ok(!relative(root, runtime.logs).startsWith('..'), `Logs escaped the temporary profile: ${runtime.logs}`);
+    // macOS puts logs under the account's real home (NSHomeDirectory), which HOME can't redirect.
+    if (process.platform !== 'darwin') {
+        assert.ok(!relative(root, runtime.logs).startsWith('..'), `Logs escaped the temporary profile: ${runtime.logs}`);
+    }
     console.log(`PASS isolation: app.asar outside checkout, fresh userData (Electron ${runtime.electron})`);
 
     const page = await application.firstWindow({ timeout: 30000 });
