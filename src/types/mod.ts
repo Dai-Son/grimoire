@@ -1108,6 +1108,7 @@ export interface AppSettings {
    *  can still check by hand when this is off. */
   autoCheckAppUpdates: boolean;
   deadlockPath: string | null;
+  lastDialogDirectory: string | null;
   devMode: boolean;
   devDeadlockPath: string | null;
   /** Diagnostic switch: when true, the main process writes a detailed

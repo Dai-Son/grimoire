@@ -14,11 +14,11 @@ import { FOUNDRY_THUMB_SCHEME, registerFoundryThumbnailProtocol } from './servic
 protocol.registerSchemesAsPrivileged([
     {
         scheme: SOUL_MODEL_SCHEME,
-        privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+        privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
     },
     {
         scheme: HERO_POSE_SCHEME,
-        privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+        privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
     },
     {
         // Serves Foundry's cached texture/icon thumbnails (PNG) to the browse grid.

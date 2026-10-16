@@ -70,7 +70,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
           cache-dependency-path: grimoire/pnpm-lock.yaml
 
@@ -122,6 +122,16 @@ jobs:
             pnpm exec electron-vite build && pnpm exec electron-builder --mac --arm64 "${args[@]}"
           else
             pnpm exec electron-vite build && pnpm exec electron-builder --win "${args[@]}"
+          fi
+
+      - name: Smoke test packaged app
+        working-directory: grimoire
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            xvfb-run -a pnpm smoke:packaged
+          else
+            pnpm smoke:packaged
           fi
 
       - name: List release directory

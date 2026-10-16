@@ -10,12 +10,14 @@
  * extract.ts is electron-free (adm-zip / fs only), so this runs against the real
  * extractArchive with no mocking.
  */
-import { describe, it, expect, beforeAll } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync } from 'fs';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { spawnSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { deflateRawSync } from 'zlib';
 import AdmZip from 'adm-zip';
-import { extractArchive } from './extract';
+import { checkOneClickOptOut, extractArchive, listArchiveContents, scanSuspiciousFiles } from './extract';
 
 describe('extractArchive (multi-variant VPK folders)', () => {
   let extracted: Awaited<ReturnType<typeof extractArchive>>;
@@ -66,5 +68,149 @@ describe('extractArchive (multi-variant VPK folders)', () => {
     // The two colliding variants both report the original pak83_dir.vpk name.
     const pak83 = extracted.filter((e) => e.fileName === 'pak83_dir.vpk');
     expect(pak83).toHaveLength(2);
+  });
+});
+
+function rawZip(declaredSize: number, compressed = deflateRawSync(Buffer.from('123456789'))): Buffer {
+  const name = Buffer.from('fixture_dir.vpk');
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt16LE(8, 8);
+  local.writeUInt32LE(0xcbf43926, 14);
+  local.writeUInt32LE(compressed.length, 18);
+  local.writeUInt32LE(declaredSize, 22);
+  local.writeUInt16LE(name.length, 26);
+
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(20, 4);
+  central.writeUInt16LE(20, 6);
+  central.writeUInt16LE(8, 10);
+  central.writeUInt32LE(0xcbf43926, 16);
+  central.writeUInt32LE(compressed.length, 20);
+  central.writeUInt32LE(declaredSize, 24);
+  central.writeUInt16LE(name.length, 28);
+
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(1, 8);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(central.length + name.length, 12);
+  end.writeUInt32LE(local.length + name.length + compressed.length, 16);
+  return Buffer.concat([local, name, compressed, central, name, end]);
+}
+
+function extractInChild(archive: Buffer) {
+  const root = mkdtempSync(join(tmpdir(), 'extract-robustness-'));
+  const archivePath = join(root, 'fixture.zip');
+  const dest = join(root, 'out');
+  writeFileSync(archivePath, archive);
+  mkdirSync(dest);
+  try {
+    const child = spawnSync(process.execPath, [
+      '--max-old-space-size=64', '--import=tsx', '--input-type=module', '-e', `
+        import { extractArchive } from ${JSON.stringify(new URL('./extract.ts', import.meta.url).href)};
+        import { readFileSync } from 'node:fs';
+        let result;
+        try {
+          const files = await extractArchive(process.argv[1], process.argv[2]);
+          result = { contents: files.map(file => readFileSync(file.path, 'utf8')) };
+        } catch (error) {
+          result = { error: error.message };
+        }
+        console.log(JSON.stringify({ ...result, maxRssKiB: process.resourceUsage().maxRSS }));
+      `, archivePath, dest,
+    ], { encoding: 'utf8', timeout: 15000, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 });
+    expect(child.error, child.stderr).toBeUndefined();
+    expect(child.signal, child.stderr).toBeNull();
+    expect(child.status, child.stderr).toBe(0);
+    const result = JSON.parse(child.stdout.trim());
+    // V8's heap cap excludes Buffers, so also check the child's peak resident memory.
+    expect(result.maxRssKiB).toBeLessThan(256 * 1024);
+    return result;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+describe('extractArchive (raw ZIP robustness)', () => {
+  it('extracts a valid raw-byte control fixture', () => {
+    expect(extractInChild(rawZip(9)).contents).toEqual(['123456789']);
+  });
+
+  it('handles a 1 GiB declared size without unbounded resident memory', () => {
+    expect(extractInChild(rawZip(1024 ** 3)).contents).toEqual(['123456789']);
+  }, 20000);
+
+  it('rejects a truncated deflate stream with a handled error', () => {
+    const compressed = deflateRawSync(Buffer.from('123456789')).subarray(0, -2);
+    expect(extractInChild(rawZip(9, compressed)).error).toEqual(expect.any(String));
+  });
+
+  it('rejects a zero declared size with real compressed data', () => {
+    expect(extractInChild(rawZip(0)).error).toEqual(expect.any(String));
+  });
+});
+
+describe('archives with duplicate entry names', () => {
+  let root: string;
+  let zipPath: string;
+  let dest: string;
+
+  beforeAll(() => {
+    root = mkdtempSync(join(tmpdir(), 'extract-duplicate-test-'));
+    zipPath = join(root, 'duplicate.zip');
+    dest = join(root, 'out');
+    mkdirSync(dest);
+
+    const name = Buffer.from('pak01_dir.vpk');
+    const localEntries: Buffer[] = [];
+    const centralEntries: Buffer[] = [];
+    let offset = 0;
+
+    for (let i = 0; i < 2; i++) {
+      const local = Buffer.alloc(30);
+      local.writeUInt32LE(0x04034b50, 0);
+      local.writeUInt16LE(20, 4);
+      local.writeUInt16LE(name.length, 26);
+      localEntries.push(local, name);
+
+      const central = Buffer.alloc(46);
+      central.writeUInt32LE(0x02014b50, 0);
+      central.writeUInt16LE(20, 4);
+      central.writeUInt16LE(20, 6);
+      central.writeUInt16LE(name.length, 28);
+      central.writeUInt32LE(offset, 42);
+      centralEntries.push(central, name);
+      offset += local.length + name.length;
+    }
+
+    const directory = Buffer.concat(centralEntries);
+    const end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0);
+    end.writeUInt16LE(2, 8);
+    end.writeUInt16LE(2, 10);
+    end.writeUInt32LE(directory.length, 12);
+    end.writeUInt32LE(offset, 16);
+    writeFileSync(zipPath, Buffer.concat([...localEntries, directory, end]));
+  });
+
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('rejects extraction through the install failure promise before writing files', async () => {
+    await expect(extractArchive(zipPath, dest)).rejects.toThrow(/duplicate/i);
+    expect(readdirSync(dest)).toEqual([]);
+  });
+
+  it('rejects listing through a promise', async () => {
+    await expect(listArchiveContents(zipPath)).rejects.toThrow(/duplicate/i);
+  });
+
+  it('leaves malformed archive errors to extraction during install preflight', async () => {
+    await expect(checkOneClickOptOut(zipPath)).resolves.toEqual({ disabled: false });
+    await expect(scanSuspiciousFiles(zipPath)).resolves.toEqual([]);
   });
 });
