@@ -19,7 +19,11 @@ separate-locales: false
 
 finish-args:
   - --share=ipc
-  - --socket=x11
+  # Electron 38+ picks native Wayland whenever XDG_SESSION_TYPE=wayland and
+  # exits if it can't reach the socket (no X11 fallback), so the Wayland
+  # socket is required; fallback-x11 covers X11 sessions.
+  - --socket=wayland
+  - --socket=fallback-x11
   - --socket=pulseaudio
   - --share=network
   - --device=dri
