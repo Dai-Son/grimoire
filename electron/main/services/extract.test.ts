@@ -15,7 +15,7 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { spawnSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { deflateRawSync } from 'zlib';
+import { crc32, deflateRawSync } from 'zlib';
 import AdmZip from 'adm-zip';
 import { checkOneClickOptOut, extractArchive, listArchiveContents, scanSuspiciousFiles } from './extract';
 
@@ -153,6 +153,78 @@ describe('extractArchive (raw ZIP robustness)', () => {
   });
 });
 
+/** A stored (uncompressed) zip with raw name bytes and no UTF-8 flag, like older Windows tools write. */
+function storedZip(entries: { name: Buffer; data: Buffer }[]): Buffer {
+  const localEntries: Buffer[] = [];
+  const centralEntries: Buffer[] = [];
+  let offset = 0;
+
+  for (const { name, data } of entries) {
+    const crc = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0x21, 12); // DOS date 1980-01-01
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    localEntries.push(local, name, data);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0x21, 14);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    centralEntries.push(central, name);
+    offset += local.length + name.length + data.length;
+  }
+
+  const directory = Buffer.concat(centralEntries);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...localEntries, directory, end]);
+}
+
+describe('archives with legacy code page entry names', () => {
+  let root: string;
+  let extracted: Awaited<ReturnType<typeof extractArchive>>;
+
+  beforeAll(async () => {
+    root = mkdtempSync(join(tmpdir(), 'extract-gbk-test-'));
+    const zipPath = join(root, 'gbk.zip');
+    const dest = join(root, 'out');
+    mkdirSync(dest);
+    // 红色/ and 蓝色/ in GBK: both decode to the same U+FFFD string as UTF-8.
+    writeFileSync(zipPath, storedZip([
+      { name: Buffer.concat([Buffer.from([0xba, 0xec, 0xc9, 0xab]), Buffer.from('/pak01_dir.vpk')]), data: Buffer.from('RED') },
+      { name: Buffer.concat([Buffer.from([0xc0, 0xb6, 0xc9, 0xab]), Buffer.from('/pak01_dir.vpk')]), data: Buffer.from('BLUE') },
+    ]));
+    extracted = await extractArchive(zipPath, dest);
+  });
+
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('keeps both variants in-process with distinct folder labels', () => {
+    const byFolder = Object.fromEntries(extracted.map((e) => [e.archiveFolder, readFileSync(e.path, 'utf8')]));
+    expect(byFolder).toEqual({
+      [Buffer.from([0xba, 0xec, 0xc9, 0xab]).toString('latin1')]: 'RED',
+      [Buffer.from([0xc0, 0xb6, 0xc9, 0xab]).toString('latin1')]: 'BLUE',
+    });
+  });
+});
+
 describe('archives with duplicate entry names', () => {
   let root: string;
   let zipPath: string;
@@ -163,54 +235,27 @@ describe('archives with duplicate entry names', () => {
     zipPath = join(root, 'duplicate.zip');
     dest = join(root, 'out');
     mkdirSync(dest);
-
     const name = Buffer.from('pak01_dir.vpk');
-    const localEntries: Buffer[] = [];
-    const centralEntries: Buffer[] = [];
-    let offset = 0;
-
-    for (let i = 0; i < 2; i++) {
-      const local = Buffer.alloc(30);
-      local.writeUInt32LE(0x04034b50, 0);
-      local.writeUInt16LE(20, 4);
-      local.writeUInt16LE(name.length, 26);
-      localEntries.push(local, name);
-
-      const central = Buffer.alloc(46);
-      central.writeUInt32LE(0x02014b50, 0);
-      central.writeUInt16LE(20, 4);
-      central.writeUInt16LE(20, 6);
-      central.writeUInt16LE(name.length, 28);
-      central.writeUInt32LE(offset, 42);
-      centralEntries.push(central, name);
-      offset += local.length + name.length;
-    }
-
-    const directory = Buffer.concat(centralEntries);
-    const end = Buffer.alloc(22);
-    end.writeUInt32LE(0x06054b50, 0);
-    end.writeUInt16LE(2, 8);
-    end.writeUInt16LE(2, 10);
-    end.writeUInt32LE(directory.length, 12);
-    end.writeUInt32LE(offset, 16);
-    writeFileSync(zipPath, Buffer.concat([...localEntries, directory, end]));
+    writeFileSync(zipPath, storedZip([
+      { name, data: Buffer.from('FIRST') },
+      { name, data: Buffer.from('SECOND') },
+      { name: Buffer.from('setup.exe'), data: Buffer.from('MZ') },
+    ]));
   });
 
   afterAll(() => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('rejects extraction through the install failure promise before writing files', async () => {
-    await expect(extractArchive(zipPath, dest)).rejects.toThrow(/duplicate/i);
-    expect(readdirSync(dest)).toEqual([]);
+  it('extracts through 7-Zip when adm-zip refuses the archive', async () => {
+    const files = await extractArchive(zipPath, dest);
+    expect(files.map((e) => e.fileName)).toEqual(['pak01_dir.vpk']);
+    expect(readdirSync(dest)).toEqual(['pak01_dir.vpk']);
   });
 
-  it('rejects listing through a promise', async () => {
-    await expect(listArchiveContents(zipPath)).rejects.toThrow(/duplicate/i);
-  });
-
-  it('leaves malformed archive errors to extraction during install preflight', async () => {
+  it('lists through 7-Zip so install preflight still sees every entry', async () => {
+    await expect(listArchiveContents(zipPath)).resolves.toEqual(['pak01_dir.vpk', 'pak01_dir.vpk', 'setup.exe']);
+    await expect(scanSuspiciousFiles(zipPath)).resolves.toEqual(['setup.exe']);
     await expect(checkOneClickOptOut(zipPath)).resolves.toEqual({ disabled: false });
-    await expect(scanSuspiciousFiles(zipPath)).resolves.toEqual([]);
   });
 });
