@@ -68,6 +68,11 @@ app.commandLine.appendSwitch(
     'HardwareMediaKeyHandling,MediaSessionService'
 );
 
+// Chromium 137 dropped the automatic SwiftShader fallback, so machines without
+// hardware WebGL (VMs, blocklisted GPUs) lost every 3D preview. The "unsafe" is
+// about untrusted web pages; our renderer only runs app shaders on local models.
+app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+
 // Import IPC handlers
 import './ipc/settings';
 import './ipc/mods';
