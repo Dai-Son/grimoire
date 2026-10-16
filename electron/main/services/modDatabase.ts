@@ -165,11 +165,11 @@ export function initDatabase(): Database.Database {
                 return initDatabase();
             } catch (recoveryError) {
                 console.error('[ModDatabase] Recovery failed:', recoveryError);
-                throw new Error(`Database initialization failed and recovery was unsuccessful: ${error.message}`);
+                throw new Error(`Database initialization failed and recovery was unsuccessful: ${error.message}`, { cause: recoveryError });
             }
         }
 
-        throw new Error(`Failed to initialize mod database: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`Failed to initialize mod database: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
 }
 

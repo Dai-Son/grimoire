@@ -1568,7 +1568,7 @@ async function importCustomModSource(
         );
         if (rollbackFailures.length > 0) {
             const reason = err instanceof Error ? err.message : String(err);
-            throw new Error(`${reason} (rollback incomplete: ${rollbackFailures.join('; ')})`);
+            throw new Error(`${reason} (rollback incomplete: ${rollbackFailures.join('; ')})`, { cause: err });
         }
         throw err;
     } finally {

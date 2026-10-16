@@ -355,14 +355,14 @@ async function fetchJson<T>(url: string, timeoutMs = 30000, options: GameBananaR
                 return parseGameBananaJson<T>(text);
             } catch (err) {
                 console.error('[fetchJson] Failed to parse JSON:', text.slice(0, 200));
-                throw new Error(`GameBanana API returned invalid JSON: ${err}`);
+                throw new Error(`GameBanana API returned invalid JSON: ${err}`, { cause: err });
             }
         } catch (err) {
             if (err instanceof Error && err.name === 'AbortError') {
                 if (options.signal?.aborted) {
-                    throw new Error('GameBanana request cancelled');
+                    throw new Error('GameBanana request cancelled', { cause: err });
                 }
-                throw new Error(`GameBanana API request timed out after ${timeoutMs / 1000} seconds`);
+                throw new Error(`GameBanana API request timed out after ${timeoutMs / 1000} seconds`, { cause: err });
             }
             throw err;
         } finally {
@@ -1111,7 +1111,7 @@ function buildContactUrl(item: ContactInfoRaw): string | undefined {
         const templateHref = hrefMatch?.[1];
         if (templateHref) {
             const prefix = templateHref.split('%VALUE%')[0];
-            let host = '';
+            let host: string;
             try {
                 host = new URL(prefix).hostname.toLowerCase();
             } catch {

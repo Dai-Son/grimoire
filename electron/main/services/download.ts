@@ -492,7 +492,7 @@ export async function downloadFile(
                                     transferSignal,
                                 );
                             } catch (error) {
-                                if (transferSignal.aborted) throw new Error('CANCELLED_BY_USER');
+                                if (transferSignal.aborted) throw new Error('CANCELLED_BY_USER', { cause: error });
                                 console.warn('[download] Fileserver selection failed; using GameBanana route:', error);
                                 candidates = [];
                             }
