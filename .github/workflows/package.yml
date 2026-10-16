@@ -127,6 +127,7 @@ jobs:
       - name: Smoke test packaged app
         working-directory: grimoire
         shell: bash
+        timeout-minutes: 10
         run: |
           if [ "${{ matrix.platform }}" = "linux" ]; then
             xvfb-run -a pnpm smoke:packaged

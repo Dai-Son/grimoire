@@ -201,7 +201,8 @@ try {
     for (const error of await page.pageErrors()) errors.add(error.stack ?? error.message);
     assert.deepEqual([...errors], [], 'Renderer console errors or uncaught exceptions');
     console.log('PASS renderer: 0 console errors, 0 uncaught exceptions');
-    await application.close();
+    try { await withTimeout(application.close(), 15000); }
+    catch { application.process().kill('SIGKILL'); }
     application = undefined;
 
     const probe = join(root, 'sqlite-probe.cjs');
@@ -222,12 +223,35 @@ try {
 } catch (error) {
     console.error(error);
     for (const error of errors) console.error(`Renderer: ${error}`);
+    try {
+        const windows = await withTimeout(application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map(win => ({
+            visible: win.isVisible(), bounds: win.getBounds(), url: win.webContents.getURL(), crashed: win.webContents.isCrashed(),
+        }))), 10000);
+        console.error(`Windows: ${JSON.stringify(windows)}`);
+        const dom = await withTimeout(application.windows()[0].evaluate(() => ({
+            readyState: document.readyState, visibility: document.visibilityState, viewport: [innerWidth, innerHeight],
+            root: document.getElementById('root')?.outerHTML.slice(0, 2000),
+        })), 10000);
+        console.error(`DOM: ${JSON.stringify(dom)}`);
+    } catch (stateError) {
+        console.error(`Could not capture window state: ${stateError}`);
+    }
     process.exitCode = 1;
 } finally {
-    clearTimeout(watchdog);
-    try { await application?.close(); }
+    // macOS keeps the app alive after its windows close, so close() can wait forever.
+    try { await withTimeout(application?.close() ?? Promise.resolve(), 15000); }
+    catch { application?.process().kill('SIGKILL'); }
     finally {
+        clearTimeout(watchdog);
         await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
         console.log('Removed temporary app and userData');
     }
+}
+
+function withTimeout(promise, ms) {
+    let timer;
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms); }),
+    ]).finally(() => clearTimeout(timer));
 }
