@@ -62,6 +62,9 @@ try {
     if (process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
         args.push('--ozone-platform=headless');
     }
+    // safeStorage reads the login keychain synchronously at boot; on a runner
+    // nobody can answer the keychain prompt, so the main process blocks.
+    if (process.platform === 'darwin') args.push('--use-mock-keychain');
     const executablePath = join(packaged, binary);
     console.log(`Launching packaged app: ${executablePath}`);
     application = await _electron.launch({ executablePath, args, env, cwd: root, timeout: 60000 });
