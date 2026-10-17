@@ -32,13 +32,16 @@ import type {
     PerformanceConfigStatus,
     PerformancePresetSummary,
 } from '../../../src/types/electron';
+import { keyExcluded } from './performancePresetGen';
 import {
+    CLASSIFICATION,
     DEFAULT_PRESET_ID,
     getPreset,
     hasVersion,
     PRESETS,
     type PerformancePreset,
     type SectionOp,
+    type VideoVariant,
 } from './performanceConfigData';
 
 /** Resolves a preset at a version the bundle does not know. The track-latest
@@ -111,7 +114,8 @@ type Overrides = Record<string, OverrideEntry>;
  *  visibility/camera on, developer/testing tools off. An explicit empty list
  *  disables every optional gameplay setting. `version` picks which bundled
  *  upstream release of that preset to write, defaulting to the newest.
- *  A preset whose upstream ships a video.txt always writes it too. */
+ *  A preset whose upstream ships a video.txt always writes it too;
+ *  `videoVariant` picks which one when the release ships several. */
 export interface ApplyOptions {
     presetId?: string;
     version?: string | null;
@@ -119,6 +123,15 @@ export interface ApplyOptions {
     resetOverrides?: boolean;
     /** Write the preset's video values over ones changed in game since. */
     restoreVideo?: boolean;
+    videoVariant?: string | null;
+}
+
+/** The video.txt variant to write: the requested one when the release ships
+ *  it, otherwise its default. Null for a release with one video.txt or none. */
+function pickVideoVariant(preset: PerformancePreset, wanted: string | null | undefined): VideoVariant | null {
+    const variants = preset.videoVariants;
+    if (!variants?.length) return null;
+    return variants.find((variant) => variant.id === wanted) ?? variants[0];
 }
 
 /** The convars a preset writes for a given opt-in selection: its performance
@@ -361,11 +374,17 @@ function presetKeyIndex(
 // the definition has moved, only the unambiguous signal counts: a marker line
 // the user commented out. Overrides banked while the definitions matched are
 // untouched; the caller still layers them.
+//
+// `rulesMoved` is the milder case: same upstream release, but Grimoire's
+// classification changed since the file was written (a key excluded or
+// un-excluded, an opt-in moved). Values on the lines we wrote still mean what
+// they say; only absence stops proving a deletion.
 function harvestOverrides(
     content: string,
     preset: PerformancePreset,
     convars: ReadonlyArray<readonly [string, string]>,
-    marker: AppliedMarker | null
+    marker: AppliedMarker | null,
+    rulesMoved: boolean
 ): Overrides {
     const idx = presetKeyIndex(preset, convars);
     const overrides: Overrides = {};
@@ -388,8 +407,10 @@ function harvestOverrides(
             if (managed === null) continue; // ambiguous bare key
             if (!managed) {
                 // Not in the preset: the user's own convar inside our block,
-                // unless the preset definition moved under us (see above).
-                if (!drift && !isCommented && entry) {
+                // unless the preset definition moved under us (see above), or
+                // it is a key Grimoire never writes, left by a build that
+                // wrote it before the key was excluded (r_lightmap_size).
+                if (!drift && !isCommented && entry && !keyExcluded(key, CLASSIFICATION)) {
                     overrides[`ConVars/${key}`] = { value: unquote(entry.value) };
                 }
                 continue;
@@ -414,8 +435,8 @@ function harvestOverrides(
     // Deleted preset convars: every applied convar key is present after an
     // apply (edited in place or injected), so one with no active entry left in
     // the ConVars section was removed by the user. Absence proves nothing once
-    // the preset definition has moved.
-    const convarRange = drift ? null : findSectionByPath(content, ['ConVars']);
+    // the preset definition or the rules have moved.
+    const convarRange = drift || rulesMoved ? null : findSectionByPath(content, ['ConVars']);
     if (convarRange) {
         const activeKeys = new Set(
             content
@@ -603,7 +624,9 @@ export function applyPerformanceConfig(
                     content,
                     appliedPreset,
                     effectiveConvars(appliedPreset, appliedOptIns),
-                    readMarker(applied)
+                    readMarker(applied),
+                    // No sidecar keeps the old marker-only reading.
+                    sidecar !== null && sidecar.classification !== CLASSIFICATION_HASH
                 ),
             };
         }
@@ -728,13 +751,20 @@ export function applyPerformanceConfig(
         const finalText = crlf ? content.split('\n').join('\r\n') : content;
         writeFileSync(gameinfoPath, finalText, 'utf-8');
         saved[preset.id] = overrides;
+        const videoVariant = pickVideoVariant(preset, opts?.videoVariant);
+        // A different config, or the other video.txt of this one, is a new
+        // look: all of its values go in, over ones changed in game under the
+        // old one. Only a reapply of the same one keeps those.
+        const newLook =
+            !!sidecar?.video &&
+            (sidecar.presetId !== preset.id || (sidecar.videoVariant ?? null) !== (videoVariant?.id ?? null));
         let video: ReturnType<typeof syncVideo>;
         try {
             video = syncVideo(
                 deadlockPath,
                 sidecar?.video ?? null,
-                preset.video,
-                opts?.restoreVideo === true
+                videoVariant?.video ?? preset.video,
+                opts?.restoreVideo === true || newLook
             );
         } catch (err) {
             writeFileSync(gameinfoPath, original, 'utf-8');
@@ -750,6 +780,7 @@ export function applyPerformanceConfig(
             optIns,
             overridesByPreset: saved,
             video: video.state,
+            videoVariant: videoVariant?.id ?? null,
         });
 
         const kept = Object.keys(overrides).length;
@@ -864,6 +895,7 @@ export function reapplyWipedPerformanceConfig(deadlockPath: string | null): Perf
         // The sidecar drops an empty list, so absent means "all off", not
         // "creator defaults".
         optIns: sidecar.optIns ?? [],
+        videoVariant: sidecar.videoVariant,
     });
 }
 
@@ -919,21 +951,24 @@ export function listPerformancePresets(): PerformancePresetSummary[] {
         // that never touches the version picker gets. `versions` carries the
         // rest, newest first.
         const newest = family.releases[0];
-        const summarize = (release: (typeof family.releases)[number]) => ({
-            version: release.version,
-            ref: release.ref,
-            refKind: release.refKind,
-            commit: release.commit,
-            historyCommit: release.historyCommit,
-            date: release.date,
-            settingCount: release.convars.length + release.sectionOps.length,
-            videoSettingCount: release.video.length,
-            optIn: release.optIn.map((control) => ({
-                key: control.key,
-                value: control.value,
-                group: control.group,
-            })),
-        });
+        const summarize = (release: (typeof family.releases)[number]) => {
+            const variants = getPreset(family.id, release.version).videoVariants;
+            return {
+                version: release.version,
+                ref: release.ref,
+                refKind: release.refKind,
+                commit: release.commit,
+                date: release.date,
+                settingCount: release.convars.length + release.sectionOps.length,
+                videoSettingCount: release.video.length,
+                ...(variants ? { videoVariants: variants.map((variant) => variant.id) } : {}),
+                optIn: release.optIn.map((control) => ({
+                    key: control.key,
+                    value: control.value,
+                    group: control.group,
+                })),
+            };
+        };
         return {
             id: family.id,
             name: family.name,
@@ -990,14 +1025,21 @@ export function getPerformanceConfigStatus(deadlockPath: string | null): Perform
                 }
             }
             const video = videoStatus(deadlockPath, sidecar?.video);
+            const outdated =
+                !!known &&
+                (!isCurrentDefinition(resolvePreset(appliedId, begin[2]), readMarker(begin)) ||
+                    (sidecar !== null && sidecar.classification !== CLASSIFICATION_HASH));
             const appliedName = known?.name ?? appliedId;
             // "Newest we bundle", not "the one the user picked": the selection
             // lives in renderer settings, so the card decides whether a newer
             // release is a nag ("you are behind") or a note ("you rolled back
             // on purpose"). Main only reports the two facts.
             const newestVersion = known?.releases[0].version ?? null;
+            // A tracked upstream release is not bundled and is newer, not older.
+            const olderBundled =
+                !!newestVersion && begin[2] !== newestVersion && !!known?.releases.some((r) => r.version === begin[2]);
             const base =
-                newestVersion && begin[2] !== newestVersion
+                olderBundled
                     ? `${appliedName} v${begin[2]} is applied; v${newestVersion} is available (reapply to update).`
                     : `${appliedName} v${begin[2]} is applied.`;
             const overrideNote = overrideCount
@@ -1013,9 +1055,11 @@ export function getPerformanceConfigStatus(deadlockPath: string | null): Perform
                 // from an unrelated preset would be a lie.
                 bundledVersion: newestVersion ?? begin[2],
                 appliedOptIns: sidecar?.optIns ?? [],
+                ...(sidecar?.videoVariant ? { appliedVideoVariant: sidecar.videoVariant } : {}),
                 managedConvarValues: managedConvarValues(content),
                 savedConvarValues,
                 handEdited,
+                ...(outdated ? { outdated } : {}),
                 overrideCount,
                 ...(video ? { video } : {}),
                 videoAvailable: known ? resolvePreset(appliedId, begin[2]).video.length : 0,
@@ -1104,7 +1148,15 @@ interface AppliedState {
     /** Which video.txt the last apply wrote, what it wrote and what it replaced. Absent
      *  when it wrote nothing there (a preset without one, or no video.txt yet). */
     video?: VideoRecord;
+    /** Which of the release's video.txt variants that was. Absent for a release
+     *  that ships only one. */
+    videoVariant?: string;
+    /** Fingerprint of the classification rules the body was written under.
+     *  Absent on sidecars written before it was recorded. */
+    classification?: string;
 }
+
+const CLASSIFICATION_HASH = sha256(JSON.stringify(CLASSIFICATION)).slice(0, 16);
 
 /** Overrides keyed by preset id, migrating the flat single-preset shape that
  *  sidecars written before multi-preset support used. That map belongs to
@@ -1138,6 +1190,7 @@ function writeAppliedState(
         optIns: string[];
         overridesByPreset: Record<string, Overrides>;
         video: VideoRecord | null;
+        videoVariant: string | null;
     }
 ): void {
     try {
@@ -1145,6 +1198,7 @@ function writeAppliedState(
             presetId: state.presetId,
             version: state.version,
             contentHash: state.contentHash,
+            classification: CLASSIFICATION_HASH,
         };
         if (state.optIns.length) trimmed.optIns = state.optIns;
         // Drop presets whose override map went empty so the sidecar does not
@@ -1154,6 +1208,7 @@ function writeAppliedState(
         );
         if (kept.length) trimmed.overridesByPreset = Object.fromEntries(kept);
         if (state.video) trimmed.video = state.video;
+        if (state.videoVariant) trimmed.videoVariant = state.videoVariant;
         writeFileSync(statePath(gameinfoPath), JSON.stringify(trimmed), 'utf-8');
     } catch {
         // Best-effort: losing the sidecar only degrades wiped-detection to

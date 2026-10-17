@@ -99,9 +99,10 @@ intersection is extractable and safe; everything beyond it is author-specific.
 
 ## What shipped
 
-Seven presets selected by id: `sqooky-default` (balanced, default), `eskay` (light), `sqooky-testing`
+Eight presets selected by id: `sqooky-default` (balanced, default), `eskay` (light), `sqooky-testing`
 (preview), `boot-max-fps` (aggressive), `kaizu-min-spec` (potato), `optilock-fps`
-(competitive), `optilock-max` (maximum). Each is a section/key diff of a pinned
+(competitive), `optilock-max` (maximum), `optilock-ultra-potato` (ultraPotato,
+added upstream in OptiLock v5.5). Each is a section/key diff of a pinned
 upstream `gameinfo.gi` against the stock baseline, generated into
 `performanceConfigData.ts` (never hand-edited) by `pnpm perf:presets` from the
 pins in `scripts/performance-presets.json`.
@@ -128,11 +129,20 @@ Invariants that hold:
 - Switching preset removes the applied one by its markers first, so the file
   always goes stock -> preset and never accumulates two presets' markers.
 
-Documented safety exclusions live beside the pins. They currently include the
-broken `r_render_portals=0` value and boot's `DistanceField=0` section
-edit. The latter access-violates in the current Deadlock build when combined
-with boot's convar body; live launch bisection confirmed the full boot preset
-stays running without that one edit. No other bundled preset currently sets it.
+Documented safety exclusions live beside the pins. They currently include
+boot's `DistanceField=0` section edit, which access-violates in the current
+Deadlock build when combined with boot's convar body; live launch bisection
+confirmed the full boot preset stays running without that one edit. No other
+bundled preset currently sets it.
+
+`r_lightmap_size` is excluded too. Since Valve's 2026-10-13 update, gameinfo.gi
+can no longer switch off the sun, stationary lights or baked shadows
+(`lb_enable_sunlight` and friends are `gameinfo_cannot_override`), and every
+OptiLock config's tiny lightmap cap (4, or 0 for Potato and Ultra Potato) then
+renders the map nearly black. Launch bisection on Ultra Potato v5.7 cleared it
+with this key alone back at stock. Cached track-latest bodies are re-filtered
+against today's excluded keys as well as sections, so an older cache cannot
+bring it back.
 
 `MaterialSystem2/RenderModes` is excluded as a whole section because it is a
 list (seven `game` entries), not key/value pairs. The parser keeps the last
@@ -145,7 +155,7 @@ Any future list-valued section needs the same treatment.
 
 ### video.txt
 
-OptiLock's two configs and Sqooky's Max FPS config ship a `video.txt` next to their
+OptiLock's configs and Sqooky's Max FPS config ship a `video.txt` next to their
 gameinfo.gi, and the authors are explicit that the config looks wrong without
 it (OptiLock's README: "You *MUST* do both or else you will have a very weird
 looking game").
@@ -169,15 +179,22 @@ never the header. `videoSha256` on a preset pins the sibling file per release,
 like `sha256` pins the gameinfo.gi. `video.exclude` in the pin manifest strips
 everything that describes the user's screen rather than render cost:
 resolution, refresh rate, window mode, monitor index, DPI, aspect mode, gamma,
-V-Sync, frame cap and `knowndevice`. The remaining keys go through the
-gameinfo.gi classification too, so `r_render_portals` is never written and
-`r_citadel_outlines` is left to its gameinfo.gi opt-in toggle.
+V-Sync, frame cap and `knowndevice`. Not for OptiLock: its source carries
+`verbatimVideo`, because dacooder's README says to paste his video.txt in
+whole and the configs only looked right that way in testing (2026-10-16). Its
+display settings are written too, and Remove restores the user's own from the
+sidecar's undo record. The remaining keys go through the
+gameinfo.gi classification too, so `r_citadel_outlines` is left to its
+gameinfo.gi opt-in toggle. `r_render_portals` was excluded until 2026-10-16
+(OptiLock v4.2 set it false and broke Doorman's door); no bundled release sets
+it false any more, so it is written as upstream ships it.
 
 `video.max` caps numeric values, for bundled presets and tracked releases
-alike. `r_texture_stream_mip_bias` is capped at 4: OptiLock's README says past
-4 you need its Sinner's Light Fix VPK, which Grimoire does not install, and
-OptiLock v5.2's Potato Config ships 6. Several gameinfo.gi bodies set it to 8,
-but video.txt is read after gameinfo.gi and wins.
+alike, except verbatim sources. `r_texture_stream_mip_bias` is capped at 4,
+because past 4 Sinner's lights need OptiLock's Sinner's Light Fix VPK, which
+Grimoire does not install. OptiLock is exempt: dacooder asked for his Potato
+Config's 6 and Ultra Potato No Shadows' 8 as shipped. Several gameinfo.gi
+bodies set it to 8, but video.txt is read after gameinfo.gi and wins.
 
 Deadlock rewrites video.txt whenever a graphics setting changes in game and
 keeps no comments, so this half has no markers. The sidecar records, per key,
@@ -196,6 +213,30 @@ launch) only skips the video half.
 
 There is no switch for the video half: a config that ships a video.txt always
 applies it, since its author says the config is broken without it.
+
+#### Variants
+
+OptiLock Ultra Potato (v5.6) ships two: `video(No Shadows).txt` and
+`video(Shadows).txt` (the latter byte-identical to the Potato Config's
+video.txt). After the exclusions and the mip-bias cap they differ in
+`r_citadel_shadow_quality` and `shaderquality` (-1 vs 0). Such a preset lists
+them in the manifest as `videoVariants` instead of `videoSha256`: an `id`, the
+`file` name next to the gameinfo.gi (`fileByRef` for older names, v5.5 called
+the No Shadows file `video.txt`) and a per-release sha256 each. The first is
+the default, and a non-default variant may only exist where the default does.
+
+The generated release keeps the default in `video`/`videoSha256` and the others
+in `videoVariants`; the family's `upstream.videoFiles` lists every variant with
+every name it has had, which is what the track-latest fetch tries next to the
+config path. A release that ships one file (Ultra Potato v5.5) has no
+`videoVariants`, so the card shows no choice. The user's pick is
+`performanceVideoVariants[presetId]` in settings (missing, or one the release
+does not ship, means the default) and rides every apply as `videoVariant`; the
+sidecar records which variant was written so wipe recovery and Undo restore it.
+Switching variant reapplies like a version pick: gameinfo.gi is rewritten to the
+same body and video.txt moves to the other file's values, minus anything changed
+in game since. Track-latest entries cached before variant support have no
+`videoVariants` and are rebuilt on the next check (`cachedLatestIsCurrent`).
 
 ### Marker grammar
 
@@ -238,8 +279,10 @@ matched are still layered on; only fresh inference is suspended.
 
 Convars that change what the player can see or how the camera is framed (enemy /
 trooper / boss outlines and glows, see-thru-walls, `cl_glow_brightness`,
-`r_citadel_*outline*`, `r_aspectratio`, FOV keys, camera pitch limits, hideout
-and debug-draw tooling, and the unit-status HUD readability keys below) are
+`r_citadel_*outline*`, `r_aspectratio`, FOV keys, camera pitch limits, bullet
+tracers (`r_drawtracers*`, which OptiLock shipped off through v5.5 and boot and
+Ultra Potato still do), hideout and debug-draw tooling, and the unit-status HUD
+readability keys below) are
 stripped from every preset body at generation time and exposed as individual
 controls. The creator's visibility and camera values are included by default,
 and the user can exclude any of them. Developer and hideout-testing tools stay
@@ -293,10 +336,10 @@ guessed. Left open deliberately.
 - **Perf-addon VPKs as optional installs.** OptiLock ships four under `Essential
   Fixes/` (SinnersLightFix, SoulContainer, ScopeDownscale,
   OptimizedMcGinnisWall). They belong in the normal VPK pipeline, not the
-  gameinfo patcher. Encode the known dependency as a `requires` field: OptiLock's
-  README says raising `r_texture_stream_mip_bias` past 4 needs Sinner's Light
-  Fix. Until then `video.max` holds it at 4.
-- **Ask Sqooky to cut git tags.** It costs him one command and upgrades four of
+  gameinfo patcher. OptiLock's Potato configs ship `r_texture_stream_mip_bias`
+  6 and 8, written as shipped, and its README says past 4 you need Sinner's
+  Light Fix, so these configs currently rely on the user installing it.
+- **Ask Sqooky to cut git tags.** It costs them one command and upgrades four of
   the six pins from a bare SHA to a real release.
 
 ## Updating presets
@@ -326,7 +369,7 @@ when the vitest suite already gates behavior offline.
 - Implementation: `electron/main/services/performanceConfig.ts`,
   `performanceConfigData.ts` (generated), `ipc/performanceConfig.ts`,
   `scripts/gen-performance-presets.mjs`, `scripts/performance-presets.json`,
-  `src/components/performance/` (`PerformanceConfigCard`, `PresetPicker`,
+  `src/components/performance/` (`PerformanceConfigCard`,
   `GameplayOptIns`)
 - Round-trip and drift tests: `electron/main/services/performanceConfig.test.ts`
 - SearchPaths ownership: `electron/main/services/system.ts` (`fixGameinfo`),

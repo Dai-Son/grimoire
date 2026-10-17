@@ -992,9 +992,10 @@ export async function applyPerformanceConfig(
   presetId?: string,
   optIns?: string[],
   version?: string | null,
-  restoreVideo?: boolean
+  restoreVideo?: boolean,
+  videoVariant?: string | null
 ): Promise<PerformanceConfigStatus> {
-  return window.electronAPI.applyPerformanceConfig(presetId, optIns, version, restoreVideo);
+  return window.electronAPI.applyPerformanceConfig(presetId, optIns, version, restoreVideo, videoVariant);
 }
 
 export async function removePerformanceConfig(): Promise<PerformanceConfigStatus> {
@@ -1004,9 +1005,10 @@ export async function removePerformanceConfig(): Promise<PerformanceConfigStatus
 export async function resetPerformanceConfigOverrides(
   presetId?: string,
   optIns?: string[],
-  version?: string | null
+  version?: string | null,
+  videoVariant?: string | null
 ): Promise<PerformanceConfigStatus> {
-  return window.electronAPI.resetPerformanceConfigOverrides(presetId, optIns, version);
+  return window.electronAPI.resetPerformanceConfigOverrides(presetId, optIns, version, videoVariant);
 }
 
 export async function reapplyWipedPerformanceConfig(): Promise<PerformanceConfigStatus> {
@@ -1026,20 +1028,6 @@ export async function checkPerformanceLatest(
   force?: boolean
 ): Promise<PerformanceLatestInfo> {
   return window.electronAPI.checkPerformanceLatest(presetId, force);
-}
-
-export async function listPerformanceRemoteVersions(
-  presetId: string
-): Promise<PerformanceRemoteVersionList> {
-  return window.electronAPI.listPerformanceRemoteVersions(presetId);
-}
-
-export async function fetchPerformanceRemoteVersion(
-  presetId: string,
-  ref: string,
-  commit?: string | null
-): Promise<PerformanceLatestInfo> {
-  return window.electronAPI.fetchPerformanceRemoteVersion(presetId, ref, commit);
 }
 
 export async function openPerformanceConfigFile(): Promise<void> {
@@ -1203,7 +1191,7 @@ export function conflictPairKey(a: string, b: string): string {
 // Profile wire types are single-sourced in types/electron.ts; re-exported
 // here to preserve this module's existing import surface.
 export type { Profile, ProfileMod, ProfileCrosshairSettings, ApplyProfileResult } from '../types/electron';
-import type { GameinfoStatus, Profile, ProfileCrosshairSettings, ApplyProfileResult, PerformanceConfigStatus, PerformancePresetSummary, PerformanceLatestInfo, PerformanceRemoteVersionList, EditorCandidate, LockerImageVariant, LockerImageEdit, CropRect } from '../types/electron';
+import type { GameinfoStatus, Profile, ProfileCrosshairSettings, ApplyProfileResult, PerformanceConfigStatus, PerformancePresetSummary, PerformanceLatestInfo, EditorCandidate, LockerImageVariant, LockerImageEdit, CropRect } from '../types/electron';
 
 export async function getProfiles(): Promise<Profile[]> {
   return window.electronAPI.getProfiles();

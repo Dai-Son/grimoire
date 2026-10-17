@@ -24,7 +24,7 @@ import {
     removePerformanceConfig,
     resetPerformanceConfigOverrides,
 } from './performanceConfig';
-import { CLASSIFICATION, getPreset } from './performanceConfigData';
+import { CLASSIFICATION, getFamily, getPreset } from './performanceConfigData';
 import { pathExcluded } from './performancePresetGen';
 
 const STOCK = readFileSync(join(__dirname, '__fixtures__/stock-gameinfo.gi'), 'utf-8').replace(/\r\n/g, '\n');
@@ -435,6 +435,35 @@ describe('overrides', () => {
         expect(read()).not.toMatch(new RegExp(`${key}\\s+"144"`));
     });
 
+    it('drops an excluded key an earlier build wrote instead of banking it as the user\'s', () => {
+        applyPerformanceConfig(gameRoot, { presetId: 'optilock-ultra-potato' });
+        // What a build from before r_lightmap_size was excluded left behind.
+        write(
+            read().replace(
+                /^(.*Grimoire Performance Config BEGIN.*)$/m,
+                '$1\n\t\tr_lightmap_size "0" // grimoire-perf added'
+            )
+        );
+
+        const result = applyPerformanceConfig(gameRoot, { presetId: 'optilock-ultra-potato' });
+        expect(result.overrideCount).toBe(0);
+        expect(activeHas(read(), 'r_lightmap_size')).toBe(false);
+        expect(bankedValue('optilock-ultra-potato', 'r_lightmap_size')).toBeUndefined();
+        removePerformanceConfig(gameRoot);
+        expect(read()).toBe(STOCK);
+    });
+
+    it('does not read a key the old rules excluded as one the user deleted', () => {
+        applyPerformanceConfig(gameRoot, { presetId: 'optilock-ultra-potato' });
+        // The file as a build that still excluded r_render_portals wrote it.
+        write(read().replace(/^.*\br_render_portals\b.*\n/m, ''));
+        writeFileSync(sidecarPath, JSON.stringify({ ...sidecar(), classification: 'older-rules' }), 'utf-8');
+
+        const result = applyPerformanceConfig(gameRoot, { presetId: 'optilock-ultra-potato' });
+        expect(result.overrideCount).toBe(0);
+        expect(activeHas(read(), 'r_render_portals')).toBe(true);
+    });
+
     it('still removes cleanly with overrides in play', () => {
         applyPerformanceConfig(gameRoot, { presetId: 'sqooky-default' });
         editFirstInjectedKey('144');
@@ -834,6 +863,32 @@ describe('hand-edited opt-ins survive the toggle', () => {
     });
 });
 
+describe('outdated', () => {
+    const sidecarPath = () => join(gameRoot, 'game', 'citadel', 'grimoire-performance.json');
+
+    it('is unset right after an apply', () => {
+        applyPerformanceConfig(gameRoot, { presetId: 'optilock-fps' });
+        expect(getPerformanceConfigStatus(gameRoot).outdated).toBeUndefined();
+    });
+
+    it('flags a file written from another upstream commit of the same release', () => {
+        applyPerformanceConfig(gameRoot, { presetId: 'optilock-fps' });
+        write(read().replace(/(BEGIN \(preset=optilock-fps v[^ ]+ @)[0-9a-f]+/, '$1e3c48af610e9'));
+        expect(getPerformanceConfigStatus(gameRoot).outdated).toBe(true);
+
+        applyPerformanceConfig(gameRoot, { presetId: 'optilock-fps' });
+        expect(getPerformanceConfigStatus(gameRoot).outdated).toBeUndefined();
+    });
+
+    it('flags a file written under older rules (a sidecar without the rules fingerprint)', () => {
+        applyPerformanceConfig(gameRoot, { presetId: 'optilock-fps' });
+        const sidecar = JSON.parse(readFileSync(sidecarPath(), 'utf-8'));
+        delete sidecar.classification;
+        writeFileSync(sidecarPath(), JSON.stringify(sidecar), 'utf-8');
+        expect(getPerformanceConfigStatus(gameRoot).outdated).toBe(true);
+    });
+});
+
 describe('video.txt settings', () => {
     // Shaped like the file Deadlock writes, display settings included.
     const VIDEO = `"video.cfg"
@@ -883,10 +938,9 @@ describe('video.txt settings', () => {
     });
 
     it('writes render settings but never the display ones', () => {
-        applyPerformanceConfig(gameRoot, { presetId: 'optilock-fps' });
+        applyPerformanceConfig(gameRoot, { presetId: 'sqooky-testing' });
         const text = readVideo();
-        expect(text).toContain('"setting.r_citadel_shadow_quality"\t\t"0"');
-        expect(text).toContain('"setting.r_texture_stream_mip_bias"\t\t"4"');
+        expect(text).not.toBe(VIDEO);
         for (const line of [
             '"DeviceID"\t\t"11269"',
             '"setting.defaultres"\t\t"2560"',
@@ -898,7 +952,21 @@ describe('video.txt settings', () => {
         ]) {
             expect(text).toContain(line);
         }
-        expect(text).not.toMatch(/setting\.(fps_max|aspectratiomode|knowndevice|r_citadel_outlines|r_render_portals)"/);
+        expect(text).not.toMatch(/setting\.(fps_max|aspectratiomode|knowndevice|r_citadel_outlines)"/);
+    });
+
+    it("writes OptiLock's video.txt as shipped, display settings included", () => {
+        applyPerformanceConfig(gameRoot, { presetId: 'optilock-fps' });
+        const text = readVideo();
+        expect(text).toContain('"DeviceID"\t\t"11269"');
+        expect(text).toContain('"setting.r_citadel_shadow_quality"\t\t"0"');
+        expect(text).toContain('"setting.defaultres"\t\t"-1"');
+        expect(text).toContain('"setting.fps_max"\t\t"0"');
+        // The gameinfo.gi toggle owns outlines.
+        expect(text).not.toMatch(/setting\.r_citadel_outlines"/);
+
+        removePerformanceConfig(gameRoot);
+        expect(readVideo()).toBe(VIDEO);
     });
 
     it('leaves video.txt alone for a preset without one, and takes back what another wrote', () => {
@@ -934,6 +1002,29 @@ describe('video.txt settings', () => {
 
         removePerformanceConfig(gameRoot);
         expect(readVideo()).toBe(VIDEO.replace(/("setting\.cpu_level"\t\t)"2"/, '$1"3"'));
+    });
+
+    it('switching to another config writes all of its video values, over ones changed in game', () => {
+        applyPerformanceConfig(gameRoot, { presetId: 'optilock-fps' });
+        writeFileSync(videoPath, readVideo().replace(/("setting\.cpu_level"\t\t)"1"/, '$1"3"'), 'utf-8');
+
+        applyPerformanceConfig(gameRoot, { presetId: 'optilock-max' });
+        const { video } = getPerformanceConfigStatus(gameRoot);
+        expect(video!.applied).toBe(video!.total);
+        removePerformanceConfig(gameRoot);
+        expect(readVideo()).toBe(VIDEO);
+    });
+
+    it('a number the game reformats does not survive a switch or Remove', () => {
+        applyPerformanceConfig(gameRoot, { presetId: 'optilock-ultra-potato', videoVariant: 'noShadows' });
+        const gamma = () => /"setting\.r_fullscreen_gamma"\t\t"([^"]*)"/.exec(readVideo())?.[1];
+        const shipped = gamma()!;
+        writeFileSync(videoPath, readVideo().replace(`"${shipped}"`, `"${Number(shipped).toFixed(6)}"`), 'utf-8');
+
+        applyPerformanceConfig(gameRoot, { presetId: 'optilock-ultra-potato', videoVariant: 'shadows' });
+        expect(gamma()).not.toBe(Number(shipped).toFixed(6));
+        removePerformanceConfig(gameRoot);
+        expect(readVideo()).toBe(VIDEO);
     });
 
     it('putting changed values back still lets Remove restore the originals', () => {
@@ -1002,6 +1093,99 @@ describe('video.txt settings', () => {
         expect(status.videoFileMissing).toBe(true);
     });
 
+    // OptiLock Ultra Potato ships its video.txt with and without shadows.
+    describe('variants', () => {
+        const ULTRA = 'optilock-ultra-potato';
+        const ultra = PRESETS.find((p) => p.id === ULTRA)!;
+        const shadowQuality = () =>
+            /"setting\.r_citadel_shadow_quality"\t\t"([^"]*)"/.exec(readVideo())?.[1];
+
+        it('are listed only for a release that ships more than one video.txt', () => {
+            expect(ultra.versions[0].videoVariants).toEqual(['noShadows', 'shadows']);
+            const single = PRESETS.flatMap((p) => p.versions).filter((v) => v !== ultra.versions[0]);
+            expect(single.every((v) => v.videoVariants === undefined)).toBe(true);
+        });
+
+        it('writes the default variant unless another is picked', () => {
+            applyPerformanceConfig(gameRoot, { presetId: ULTRA });
+            expect(shadowQuality()).toBe('-1');
+            expect(getPerformanceConfigStatus(gameRoot).appliedVideoVariant).toBe('noShadows');
+        });
+
+        it('switching variant rewrites only video.txt, and Remove restores both files', () => {
+            applyPerformanceConfig(gameRoot, { presetId: ULTRA });
+            const gameinfoText = read();
+            applyPerformanceConfig(gameRoot, { presetId: ULTRA, videoVariant: 'shadows' });
+            expect(shadowQuality()).toBe('0');
+            expect(read()).toBe(gameinfoText);
+            expect(getPerformanceConfigStatus(gameRoot).appliedVideoVariant).toBe('shadows');
+
+            removePerformanceConfig(gameRoot);
+            expect(readVideo()).toBe(VIDEO);
+            expect(read()).toBe(STOCK);
+        });
+
+        it('falls back to the default for a variant the release does not ship', () => {
+            applyPerformanceConfig(gameRoot, { presetId: ULTRA, videoVariant: 'nope' });
+            expect(shadowQuality()).toBe('-1');
+
+            applyPerformanceConfig(gameRoot, {
+                presetId: ULTRA,
+                version: ultra.versions[1].version,
+                videoVariant: 'shadows',
+            });
+            expect(shadowQuality()).toBe('-1');
+            expect(getPerformanceConfigStatus(gameRoot).appliedVideoVariant).toBeUndefined();
+        });
+
+        it('a game update that wipes gameinfo.gi brings back the variant that was applied', () => {
+            applyPerformanceConfig(gameRoot, { presetId: ULTRA, videoVariant: 'shadows' });
+            const applied = readVideo();
+            write(STOCK);
+            expect(reapplyWipedPerformanceConfig(gameRoot).state).toBe('applied');
+            expect(readVideo()).toBe(applied);
+        });
+
+        it('writes the mip bias the No Shadows file ships, uncapped', () => {
+            applyPerformanceConfig(gameRoot, { presetId: ULTRA });
+            expect(readVideo()).toContain('"setting.r_texture_stream_mip_bias"\t\t"8"');
+        });
+
+        // The generator needs the network, so its variant handling is checked
+        // here against what it emitted: the manifest's declarations and pins.
+        describe('generated from the pin manifest', () => {
+            type Variant = { id: string; file: string; fileByRef?: Record<string, string>; sha256: Record<string, string | null> };
+            const manifest = JSON.parse(
+                readFileSync(join(__dirname, '../../../scripts/performance-presets.json'), 'utf-8')
+            ) as { presets: Array<{ id: string; videoVariants?: Variant[] }> };
+            const declared = manifest.presets.filter((p) => p.videoVariants);
+
+            it('declares each variant file, default first, with every name it has had', () => {
+                expect(declared.map((p) => p.id)).toContain(ULTRA);
+                for (const entry of declared) {
+                    expect(getFamily(entry.id).upstream.videoFiles).toEqual(
+                        entry.videoVariants!.map((v) => ({
+                            variant: v.id,
+                            files: [...new Set([v.file, ...Object.values(v.fileByRef ?? {})])],
+                        }))
+                    );
+                }
+            });
+
+            it('pins every bundled release to the manifest hash of each variant it ships', () => {
+                for (const entry of declared) {
+                    const [first, ...rest] = entry.videoVariants!;
+                    for (const release of getFamily(entry.id).releases) {
+                        expect(release.videoSha256).toBe(first.sha256[release.ref]);
+                        expect((release.videoVariants ?? []).map((v) => [v.id, v.sha256])).toEqual(
+                            rest.filter((v) => v.sha256[release.ref]).map((v) => [v.id, v.sha256[release.ref]])
+                        );
+                    }
+                }
+            });
+        });
+    });
+
     describe('Steam userdata video.txt', () => {
         /** A Steam account's Deadlock cfg folder holding video.txt, as the
          *  game creates it; `launched` stamps its machine_convars.vcfg. */
@@ -1034,6 +1218,20 @@ describe('video.txt settings', () => {
             applyPerformanceConfig(gameRoot, { presetId: 'optilock-fps' });
             expect(readFileSync(older, 'utf-8')).toBe(VIDEO);
             expect(readFileSync(newer, 'utf-8')).not.toBe(VIDEO);
+        });
+
+        it('writes the game folder copy while the account that launched last has none', () => {
+            const other = userdataVideo('111', 1000);
+            const cfg = join(h.steamRoot, 'userdata', '222', '1422450', 'local', 'cfg');
+            mkdirSync(cfg, { recursive: true });
+            const convars = join(cfg, 'machine_convars.vcfg');
+            writeFileSync(convars, '"config" {}', 'utf-8');
+            utimesSync(convars, 2000, 2000);
+
+            applyPerformanceConfig(gameRoot, { presetId: 'optilock-fps' });
+            expect(readVideo()).not.toBe(VIDEO);
+            expect(readFileSync(other, 'utf-8')).toBe(VIDEO);
+            expect(existsSync(join(cfg, 'video.txt'))).toBe(false);
         });
 
         it('moves the settings when the game starts reading the userdata copy', () => {
