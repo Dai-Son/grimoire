@@ -107,6 +107,19 @@ jobs:
           args=(--publish never)
           if [ -n "$BUILD_VERSION" ]; then
             args+=("-c.extraMetadata.version=$BUILD_VERSION" "-c.publish.channel=$BUILD_CHANNEL" -c.generateUpdatesFilesForAllChannels=false)
+            # The version keeps its timestamp and commit for update ordering, but
+            # the files only need the build date. The nightly*.yml feeds follow
+            # whatever the files are called.
+            stamp="${BUILD_VERSION#*-nightly.}"
+            day="${stamp:0:4}-${stamp:4:2}-${stamp:6:2}"
+            args+=(
+              "-c.nsis.artifactName=Grimoire-Setup-Nightly-$day.\${ext}"
+              "-c.portable.artifactName=Grimoire-Portable-Nightly-$day.\${ext}"
+              "-c.appImage.artifactName=Grimoire-Nightly-$day.\${ext}"
+              "-c.deb.artifactName=grimoire_nightly-${day}_amd64.\${ext}"
+              "-c.dmg.artifactName=Grimoire-Nightly-$day-\${arch}.\${ext}"
+              "-c.mac.artifactName=Grimoire-Nightly-$day-\${arch}-mac.\${ext}"
+            )
           fi
           if [ "${{ matrix.platform }}" = "linux" ]; then
             pnpm exec electron-vite build && pnpm exec electron-builder --linux "${args[@]}"
