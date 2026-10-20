@@ -56,10 +56,12 @@ const COLOR_CODENAME_BY_HERO: Readonly<Record<string, string>> = {
     Paige: 'bookworm',
     Abrams: 'abrams',
     Apollo: 'fencer',
+    Baba: 'baba',
     Bebop: 'bebop',
     Billy: 'punkgoat',
     Calico: 'nano',
     Celeste: 'unicorn',
+    'Deadman Danny': 'deadpack',
     Doorman: 'doorman',
     Drifter: 'drifter',
     Dynamo: 'dynamo',
@@ -76,16 +78,20 @@ const COLOR_CODENAME_BY_HERO: Readonly<Record<string, string>> = {
     Mina: 'vampirebat',
     Mirage: 'mirage',
     'Mo & Krill': 'digger',
+    'Nurse Harrow': 'nurse',
     Paradox: 'chrono',
     Pocket: 'pocket',
+    'Rat King': 'ratking',
     Rem: 'familiar',
     Seven: 'gigawatt',
     Shiv: 'shiv',
     Silver: 'werewolf',
     Sinclair: 'magician',
+    Solomon: 'chessmaster',
     Venator: 'priest',
     Victor: 'frank',
     Vindicta: 'hornet',
+    Violet: 'artist',
     Viscous: 'viscous',
     Vyper: 'viper',
     Warden: 'warden',
@@ -101,8 +107,10 @@ const COLOR_CODENAME_BY_HERO: Readonly<Record<string, string>> = {
  *  v4: Graves picker-hand albedo + transmissive textures + necro_hands tint.
  *  v5: Graves hand flame aura (g_vSelfIllumTint on necro_flame_effect*).
  *  v6: Infernus body self-illum accents + flame materials + arm flame ramp.
- *  v7: bundled vpkmerge main build with full selectable-roster recipe coverage. */
-const RECIPE_CACHE_VERSION = 7;
+ *  v7: bundled vpkmerge main build with full selectable-roster recipe coverage.
+ *  v8: shared VFX recolored as hero-local copies (no bleed onto other heroes),
+ *  recipes for Baba, Solomon, Rat King, Violet, Deadman Danny and Nurse Harrow. */
+const RECIPE_CACHE_VERSION = 8;
 
 /** The recolor codename for a hero, or null when no recipe is pinned for it. */
 export function colorCodenameForHero(heroName: string): string | null {
