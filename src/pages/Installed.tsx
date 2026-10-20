@@ -74,6 +74,12 @@ import {
   type MergeSourceUpdateSkip,
 } from '../lib/mergeSourceUpdate';
 import ModDetailsModal from '../components/ModDetailsModal';
+import { useInstalledRequirements } from '../components/requirements/useInstalledRequirements';
+import { RequirementsControl } from '../components/requirements/RequirementsControl';
+import { useRequirementOrderStore } from '../stores/requirementOrderStore';
+import { requirementOrderIssues } from '../lib/requirementLoadOrder';
+import { useRequirementsStore } from '../stores/requirementsStore';
+import { hasRequirementIssues, modRequirementRefs, requirementKey } from '../lib/modRequirements';
 import ImportSourceMenu from '../components/interchange/ImportSourceMenu';
 import ExportModal from '../components/interchange/ExportModal';
 import VariantPickerModal from '../components/VariantPickerModal';
@@ -697,6 +703,13 @@ export default function Installed() {
   // Memoized so the array identity (and the entry identities derived from it)
   // only changes when `mods` does; the memoized card grid depends on that.
   const visibleMods = useMemo(() => visibleInstalledMods(mods), [mods]);
+  useInstalledRequirements(visibleMods);
+  const requirementSnapshots = useRequirementsStore(state => state.snapshots);
+  const requirementFiles = useRequirementOrderStore(state => state.files);
+  const [requirementsOnly, setRequirementsOnly] = useState(false);
+  const requirementIssueIds = useMemo(() => new Set(visibleMods.filter(mod => modRequirementRefs(mod)
+    .some(target => hasRequirementIssues(requirementSnapshots[requirementKey(target)], mods) || requirementOrderIssues(target, requirementSnapshots[requirementKey(target)], mods, requirementFiles).some(issue => issue.overlay.id === mod.id))).map(mod => mod.id)),
+  [visibleMods, mods, requirementSnapshots, requirementFiles]);
   // Mods the bulk imprint could plausibly act on: visible (locker artifacts and
   // absorbed sources already excluded above) that are not yet imprinted OR
   // carry a stale embed (legacy format / sidecar drift, pending re-imprint).
@@ -849,6 +862,7 @@ export default function Installed() {
     setStatusSel(['enabled', 'disabled']);
     setHeroFilter('all');
     setTagFilter([]);
+    setRequirementsOnly(false);
     setListFilter([]);
     navigate(location.pathname, { replace: true, state: null });
   }, [location, mods, navigate]);
@@ -1288,6 +1302,23 @@ export default function Installed() {
 
   const [updateAllConfirmOpen, setUpdateAllConfirmOpen] = useState(false);
   const [updateMenuTargetId, setUpdateMenuTargetId] = useState<string | null>(null);
+  const requirementRevealId = location.state && typeof location.state === 'object' &&
+    'requirementModId' in location.state && typeof location.state.requirementModId === 'string'
+    ? location.state.requirementModId : null;
+  useEffect(() => {
+    if (!requirementRevealId) return;
+    setSearch('');
+    setSourceSel(['gamebanana', 'local']);
+    setStatusSel(['enabled', 'disabled']);
+    setHeroFilter('all');
+    setTagFilter([]);
+    setListFilter([]);
+    setRequirementsOnly(false);
+    setSortMode('priority');
+    setEnabledCollapsed(false);
+    setDisabledCollapsed(false);
+    setGridWarm(true);
+  }, [requirementRevealId]);
   const [compatibilityOpen, setCompatibilityOpen] = useState(false);
   const [outdatedVdataOpen, setOutdatedVdataOpen] = useState(false);
   const [staleModelsOpen, setStaleModelsOpen] = useState(false);
@@ -3109,11 +3140,12 @@ export default function Installed() {
   const statusActive = statusSel.length !== 2;
   const heroActive = heroFilter !== 'all';
   const filtersActive =
-    sourceActive || statusActive || heroActive || tagFilter.length > 0 || listFilter.length > 0;
+    sourceActive || statusActive || heroActive || tagFilter.length > 0 || listFilter.length > 0 || requirementsOnly;
   const sortActive = sortMode !== 'priority';
   const viewIsReorderable = !listsView && !searchNeedle && !filtersActive && !sortActive;
   const activeAdjustmentCount =
     (sourceActive ? 1 : 0) +
+    (requirementsOnly ? 1 : 0) +
     (statusActive ? 1 : 0) +
     (heroActive ? 1 : 0) +
     tagFilter.length +
@@ -3135,6 +3167,7 @@ export default function Installed() {
       listFilter.length === 0 ||
       (entryListIds.get(entry.key) ?? EMPTY_LIST_IDS).some((id) => listFilter.includes(id));
     const matchesAllFilters = (entry: ModEntry) =>
+      (!requirementsOnly || (entry.kind === 'single' ? requirementIssueIds.has(entry.mod.id) : entry.variants.some(mod => requirementIssueIds.has(mod.id)))) &&
       matchesSearchEntry(entry) &&
       matchesSourceEntry(entry) &&
       matchesHeroEntry(entry) &&
@@ -3174,7 +3207,7 @@ export default function Installed() {
         }))
       : [];
     return { visibleEnabled, visibleDisabled };
-  }, [searchNeedle, sourceSel, heroFilter, tagFilter, listFilter, entryFacetMeta, entryListIds, sortMode, statusSel, enabledEntries, disabledEntries, disabledAlphabetical, disabledOrder, disabledFavorites]);
+  }, [searchNeedle, sourceSel, heroFilter, tagFilter, listFilter, entryFacetMeta, entryListIds, sortMode, statusSel, enabledEntries, disabledEntries, disabledAlphabetical, disabledOrder, disabledFavorites, requirementsOnly, requirementIssueIds]);
   const totalMatches = visibleEnabled.length + visibleDisabled.length;
   const listGroups = useMemo(() => buildInstalledListGroups([...visibleEnabled, ...visibleDisabled], modLists), [visibleEnabled, visibleDisabled, modLists]);
   const activeCollapsedLists = searchNeedle
@@ -3254,6 +3287,7 @@ export default function Installed() {
       setStatusSel(['enabled', 'disabled']);
       setHeroFilter('all');
       setTagFilter([]);
+    setRequirementsOnly(false);
       setListFilter([]);
     }
     if (isEntryEnabled(entry)) setEnabledCollapsed(false);
@@ -3266,6 +3300,21 @@ export default function Installed() {
     setGridWarm(true);
     setUpdateMenuTargetId(modId);
   };
+
+  useLayoutEffect(() => {
+    if (!requirementRevealId) return;
+    const entry = findEntryForModId(allEntries, requirementRevealId);
+    if (!entry) return;
+    const card = installedScrollRef.current?.querySelector<HTMLElement>(
+      `[data-installed-entry-key="${window.CSS.escape(entry.key)}"]`,
+    );
+    if (!card) return;
+    card.scrollIntoView({ block: 'center' });
+    const remove = () => card.classList.remove('ring-2', 'ring-accent');
+    card.classList.add('ring-2', 'ring-accent');
+    window.setTimeout(remove, 2500);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [requirementRevealId, allEntries, visibleEnabled, visibleDisabled, gridWarm, findEntryForModId, navigate, location.pathname]);
 
   // Reveal the card after filters and section expansion have committed, then
   // open exactly the view its normal click uses. Re-align after skipped layout.
@@ -3711,11 +3760,8 @@ export default function Installed() {
             : 'bg-bg-primary/95 backdrop-blur supports-[backdrop-filter]:bg-bg-primary/80'
         }`}
       >
-        {/* Row 1: search + view controls. The search takes every pixel the
-            controls don't need (uncapped flex-1) so there's no dead gap at wide
-            window widths, and shrinks to min-w instead of pushing the controls
-            onto a right-aligned orphan row when cramped. */}
-        <div className="flex items-center gap-2 lg:gap-3">
+        {/* Narrow windows give search its own row so controls wrap together. */}
+        <div className="flex flex-col items-stretch gap-2 xl:flex-row xl:items-center xl:gap-3">
           <div className="relative min-w-[11rem] flex-1">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary pointer-events-none" />
             <input
@@ -3736,7 +3782,7 @@ export default function Installed() {
               </button>
             )}
           </div>
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-start gap-2 xl:ml-auto xl:justify-end">
             <InstalledListControls
               view={listPreferences.view}
               onView={setListView}
@@ -3746,6 +3792,7 @@ export default function Installed() {
                 view controls (wrapping together when cramped) instead of
                 claiming a second strip below the search. Copy-enabled sits
                 inside topStatusActions, immediately after Fix Unknown. */}
+            <RequirementsControl count={requirementIssueIds.size} active={requirementsOnly} onClick={() => setRequirementsOnly(value => !value)} />
             {topStatusActions}
             {/* Retroactive bulk imprint launcher (experimental, opt-in).
                 Icon-only, same shape/height as the other toolbar icon buttons
@@ -3968,6 +4015,7 @@ export default function Installed() {
                         setStatusSel(['enabled', 'disabled']);
                         setHeroFilter('all');
                         setTagFilter([]);
+    setRequirementsOnly(false);
                         setListFilter([]);
                       }}
                       className="mt-3 w-full rounded-md border border-border px-2 py-1.5 text-2xs uppercase tracking-wider text-text-secondary transition-colors hover:border-hl/20 hover:text-text-primary cursor-pointer"
@@ -4141,6 +4189,7 @@ export default function Installed() {
               setStatusSel(['enabled', 'disabled']);
               setHeroFilter('all');
               setTagFilter([]);
+    setRequirementsOnly(false);
             }}
           >
             {searchNeedle ? t('installed.filters.clearSearch') : t('installed.filters.clearFilters')}
