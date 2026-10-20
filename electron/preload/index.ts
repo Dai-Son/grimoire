@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import type { ChooseModUpdateReplacementArgs, ModUpdateState, StartModUpdatesArgs } from '../../src/types/modUpdates';
 import type {
     PortableProfile,
     PortableResolvedMod,
@@ -50,7 +51,6 @@ import type {
     ImportCustomModsBatchArgs,
     ImportCustomModsProgress,
     LocalVariantGroupTarget,
-    RestoreLocalVariantGroupReplacementArgs,
     ImportSoulContainerGlbArgs,
     PreviewSoulContainerGlbArgs,
     ImportSpiritUrnGlbArgs,
@@ -65,6 +65,7 @@ import type {
     DownloadErrorData,
     ModsAutoDisabledData,
     DownloadQueueData,
+    DownloadQueueItem,
     OneClickInstallData,
     OneClickSuspiciousFilesData,
     MultiVpkPickData,
@@ -103,8 +104,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     detectDeadlock: () => ipcRenderer.invoke('detect-deadlock'),
     validateDeadlockPath: (path: string) => ipcRenderer.invoke('validate-deadlock-path', path),
     createDevDeadlockPath: () => ipcRenderer.invoke('create-dev-deadlock-path'),
+    copyModsToDev: () => ipcRenderer.invoke('copy-mods-to-dev'),
+    onCopyModsToDevProgress: (callback: (percent: number) => void) => {
+        const listener = (_: unknown, percent: number) => callback(percent);
+        ipcRenderer.on('copy-mods-to-dev-progress', listener);
+        return () => ipcRenderer.removeListener('copy-mods-to-dev-progress', listener);
+    },
     getSettings: () => ipcRenderer.invoke('get-settings'),
-    setSettings: (settings: AppSettings) => ipcRenderer.invoke('set-settings', settings),
+    setSettings: (patch: Partial<AppSettings>) => ipcRenderer.invoke('set-settings', patch),
 
     // Mod transfer between mod managers (neutral interchange format; no cloud)
     interchange: {
@@ -135,6 +142,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     // Mods
+    listModBackups: () => ipcRenderer.invoke('list-mod-backups'),
+    restoreModBackup: (backupId: string) => ipcRenderer.invoke('restore-mod-backup', backupId),
+    deleteModBackup: (backupId: string) => ipcRenderer.invoke('delete-mod-backup', backupId),
+    onModBackupsChanged: (callback: () => void) => {
+        const listener = () => callback();
+        ipcRenderer.on('mod-backups-changed', listener);
+        return () => ipcRenderer.removeListener('mod-backups-changed', listener);
+    },
     getCrashAdvisories: () => ipcRenderer.invoke('get-crash-advisories'),
     dismissCrashAdvisory: (id: string) => ipcRenderer.invoke('dismiss-crash-advisory', id),
     onCrashAdvisoriesChanged: (callback: (findings: import('../../src/types/crashAdvisory').CrashAdvisory[]) => void) => {
@@ -167,7 +182,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('delete-mods-progress', handler);
         return () => ipcRenderer.removeListener('delete-mods-progress', handler);
     },
-    assertReplacementSafety: (modIds: string[]) => ipcRenderer.invoke('assert-replacement-safety', modIds),
     revealModInFolder: (modId: string) => ipcRenderer.invoke('reveal-mod-in-folder', modId),
     healModAttachments: (modId: string) => ipcRenderer.invoke('heal-mod-attachments', modId),
     reviewModCompatibility: () => ipcRenderer.invoke('review-mod-compatibility'),
@@ -195,8 +209,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('edit-local-mod', modId, args),
     setLocalVariantGroup: (modIds: string[], target: LocalVariantGroupTarget) =>
         ipcRenderer.invoke('set-local-variant-group', modIds, target),
-    restoreLocalVariantGroupReplacement: (args: RestoreLocalVariantGroupReplacementArgs) =>
-        ipcRenderer.invoke('restore-local-variant-group-replacement', args),
     setVariantLabel: (modId: string, label: string) =>
         ipcRenderer.invoke('set-variant-label', modId, label),
     setModLockerHero: (modId: string, heroName: string | null) =>
@@ -430,6 +442,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getModUpdates: (args: GetModUpdatesArgs) => ipcRenderer.invoke('get-mod-updates', args),
     getSubmitterLinks: (memberId: number) => ipcRenderer.invoke('get-submitter-links', memberId),
     downloadMod: (args: DownloadModArgs) => ipcRenderer.invoke('download-mod', args),
+    startModUpdates: (args: StartModUpdatesArgs) => ipcRenderer.invoke('start-mod-updates', args),
+    getModUpdateState: () => ipcRenderer.invoke('get-mod-update-state'),
+    onModUpdateStateUpdated: (callback: (state: ModUpdateState) => void) => {
+        const listener = (_: unknown, state: ModUpdateState) => callback(state);
+        ipcRenderer.on('mod-update-state-updated', listener);
+        return () => ipcRenderer.removeListener('mod-update-state-updated', listener);
+    },
+    chooseModUpdateReplacement: (args: ChooseModUpdateReplacementArgs) => ipcRenderer.invoke('choose-mod-update-replacement', args),
+    removeModUpdateRequest: (requestId: string) => ipcRenderer.invoke('remove-mod-update-request', requestId),
     getGameBananaSections: () => ipcRenderer.invoke('get-gamebanana-sections'),
     getGameBananaCategories: (args: GetCategoriesArgs) =>
         ipcRenderer.invoke('get-gamebanana-categories', args),
@@ -527,12 +548,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Download Queue
     getDownloadQueue: () => ipcRenderer.invoke('get-download-queue'),
+    moveQueuedDownload: (jobId: string, beforeJobId: string | null) =>
+        ipcRenderer.invoke('move-queued-download', jobId, beforeJobId),
+    prioritizeQueuedDownload: (jobId: string) => ipcRenderer.invoke('prioritize-queued-download', jobId),
     getCurrentDownload: () => ipcRenderer.invoke('get-current-download'),
     removeFromQueue: (modId: number, fileId?: number) =>
         ipcRenderer.invoke('remove-from-queue', modId, fileId),
     cancelActiveDownload: () => ipcRenderer.invoke('cancel-active-download'),
-    cancelDownloadTarget: (modId: number, fileId: number) =>
-        ipcRenderer.invoke('cancel-download-target', modId, fileId),
+    cancelDownloadTarget: (modId: number, fileId: number, jobId?: string) =>
+        ipcRenderer.invoke('cancel-download-target', modId, fileId, jobId),
+    cancelQueuedDownloads: (pendingTargets: Pick<DownloadQueueItem, 'modId' | 'fileId'>[] = []) =>
+        ipcRenderer.invoke('cancel-queued-downloads', pendingTargets),
     onDownloadQueueUpdated: (callback: (data: DownloadQueueData) => void) => {
         const handler = (_event: Electron.IpcRendererEvent, data: DownloadQueueData) => callback(data);
         ipcRenderer.on('download-queue-updated', handler);

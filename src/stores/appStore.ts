@@ -9,6 +9,7 @@ import { showToast } from './toastStore';
 import { buildHeroList, getLockerSkinKey } from '../lib/lockerUtils';
 import { modPreferenceKey } from '../lib/disabledModPrefs';
 import { pathDedupeKey } from '../lib/customModImport';
+import { acknowledgeDownloadCompletions, getPendingDownloadCompletions } from '../lib/downloadActivity';
 import { modRestoreKey, planSoloByKeys, planRestore } from '../lib/soloRestore';
 import {
   SHUFFLE_ON_LAUNCH_KEY,
@@ -431,8 +432,9 @@ interface AppState {
    *  page with the loading skeleton. Refreshes are silent by default once a
    *  library has loaded; pass `{ silent: false }` only for an explicit blocking
    *  reload. Pass `{ force: true }` after a filesystem mutation so an older
-   *  in-flight scan cannot be reused. */
-  loadMods: (opts?: { silent?: boolean; force?: boolean }) => Promise<void>;
+   *  in-flight scan cannot be reused. Use `{ afterCurrent: true }` for queued
+   *  writes to wait for the current scan and share one fresh follow-up. */
+  loadMods: (opts?: { silent?: boolean; force?: boolean; afterCurrent?: boolean }) => Promise<void>;
   /** Returns false when the toggle was blocked (e.g. the 99-enabled cap), so
    *  batch callers can stop early. */
   toggleMod: (modId: string) => Promise<boolean>;
@@ -593,14 +595,19 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Save settings to backend
   saveSettings: async (settings: AppSettings) => {
+    const previous = get().settings;
+    // Send this action's changes so a delayed path switch cannot undo other saves.
+    const patch = Object.fromEntries(Object.entries(settings).filter(([key, value]) =>
+      !previous || value !== previous[key as keyof AppSettings],
+    )) as Partial<AppSettings>;
     set({ settingsLoading: true, settingsError: null });
     try {
-      await api.setSettings(settings);
-      setDateFormat(settings.dateFormat);
-      applyLanguagePreference(settings.language);
-      set({ settings, settingsLoading: false });
+      const saved = await api.setSettings(patch);
+      setDateFormat(saved.dateFormat);
+      applyLanguagePreference(saved.language);
+      set({ settings: saved, settingsLoading: false });
       // Reload mods if path changed
-      if (getActiveDeadlockPath(settings)) {
+      if (getActiveDeadlockPath(saved)) {
         get().loadMods({ force: true });
       }
     } catch (err) {
@@ -770,12 +777,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   // supersedes an older scan when a mutation or path change makes reuse unsafe.
   loadMods: (opts) => {
     const existing = modsLoadInFlight;
+    // Update completions need a scan that starts after their write. Wait for
+    // older reads, then let concurrent completion requests share one new scan.
+    if (opts?.afterCurrent && existing && existing.generation === modsGeneration) {
+      return existing.promise.then(() => get().loadMods({ silent: opts.silent }));
+    }
     if (!opts?.force && existing && existing.generation === modsGeneration) {
       return existing.promise;
     }
 
     const silent = opts?.silent ?? get().modsLoaded;
     const gen = ++modsGeneration;
+    const completedDownloads = getPendingDownloadCompletions();
     if (!silent) set({ modsLoading: true, modsError: null });
     const promise = (async () => {
       try {
@@ -816,6 +829,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               shuffleVariants: migrated.shuffleVariants,
             });
           }
+          acknowledgeDownloadCompletions(completedDownloads);
         } else if (!silent) {
           // Superseded by a newer load/mutation: drop the stale list, but still
           // clear our own spinner so the page doesn't hang on it.

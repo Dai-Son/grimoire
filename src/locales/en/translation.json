@@ -451,9 +451,13 @@
     }
   },
   "downloadQueue": {
+    "cancelAll": "Cancel all",
+    "cancelAllFailed": "Could not cancel all queued downloads.",
     "cancelDownload": "Cancel download",
     "collapse": "Collapse",
     "downloads": "Downloads",
+    "downloadNow": "Download now",
+    "downloadNext": "Download next after the current installation finishes",
     "eta": {
       "seconds_one": "{{count}}s",
       "seconds_other": "{{count}}s",
@@ -462,12 +466,15 @@
       "left": "{{eta}} left"
     },
     "noDownloads": "No downloads",
+    "paused": "Paused · {{percent}}%",
     "preparing": "Preparing…",
     "queuedHeader_one": "Queued ({{count}})",
     "queuedHeader_other": "Queued ({{count}})",
     "remainingQueued_one": "{{count}} queued",
     "remainingQueued_other": "{{count}} queued",
     "removeFromQueue": "Remove from queue",
+    "reorder": "Reorder {{name}}",
+    "reorderFailed": "Could not change the download order.",
     "serverAutomatic": "Automatic · {{server}}",
     "serverSwitching": "Switching from {{server}}…",
     "showDetails": "Show download details"
@@ -801,6 +808,8 @@
       "appearance": "Appearance",
       "grimoireSocial": "Grimoire Social",
       "preferences": "Preferences",
+      "installationAndUpdates": "Installation & Updates",
+      "integrations": "Integrations",
       "hiddenCreators": "Hidden creators",
       "experimentalFeatures": "Experimental Features",
       "support": "Support",
@@ -926,6 +935,10 @@
     "preferences": {
       "expandLocker": "Expand Locker cards by default",
       "switchVariants": "Switch variants instead of stacking them",
+      "autoMatchRemainingFiles": "Match remaining update files automatically",
+      "skipModReplacementConfirmation": "Skip file replacement confirmation",
+      "swapManualReplacementActions": "Swap Install and Replace in manual updates",
+      "keepModBackups": "Keep removed mod files for 24 hours",
       "enableAfterDownload": "Enable mods after download",
       "confirmProfileUpdate": "Confirm before updating a profile",
       "ignoreConflicts": "Ignore conflicts by default",
@@ -937,6 +950,12 @@
       "lastSaltAttemptFailed": "Last upload failed: {{error}}",
       "developerMode": "Developer Mode",
       "developerModeDescription": "Use a dummy Deadlock directory for local testing without game files.",
+      "copyModsToDev": "Copy mods to dev mode",
+      "copyModsToDevDescription": "Replace developer mods and metadata with a copy of your normal library.",
+      "copyModsToDevConfirmTitle": "Copy mods to dev mode?",
+      "copyModsToDevConfirmMessage": "All existing dev mode mods and metadata will be deleted and replaced with a copy of your normal mod library. Large libraries can take a long time to copy and require substantial additional disk space.",
+      "copyModsToDevSuccess": "Mods copied to developer mode.",
+      "copyModsToDevFailed": "Could not copy mods to developer mode.",
       "dateFormat": "Date Format",
       "dateFormatDescription": "How upload and update dates are shown on mods and files."
     },
@@ -1054,6 +1073,10 @@
     "toggles": {
       "expandLocker": "Start Locker list view with hero cards expanded.",
       "switchVariants": "Installing a new variant disables the old one. Off keeps both active. Updates always replace the old file.",
+      "autoMatchRemainingFiles": "After matching names and descriptions, pair one unmatched installed file with one remaining new upload. This can replace a different variant. Turn off to choose these replacements yourself.",
+      "skipModReplacementConfirmation": "Replace files without showing the confirmation dialog. Turn off to ask again.",
+      "swapManualReplacementActions": "Make Replace the main action and Install the icon button when choosing manual replacements.",
+      "keepModBackups": "Back up updated, replaced, and deleted mod files. Restore them as disabled files from a mod's Backups menu. Backups older than 24 hours are removed at startup. Turning this off stops new backups.",
       "enableAfterDownload": "Enable mods as soon as they finish downloading. Stays disabled if no slot is free.",
       "confirmProfileUpdate": "Confirm before overwriting a profile's saved mods. Off overwrites immediately.",
       "ignoreConflicts": "Hide all conflicts from the Conflicts page. Off shows them.",
@@ -1166,6 +1189,12 @@
     }
   },
   "installed": {
+    "backups": {
+      "menuTrigger": "Backups",
+      "deleteNamed": "Delete backup {{name}}",
+      "restored": "Backup restored",
+      "installChanged": "The active mod folder changed. Try restoring the backup again."
+    },
     "empty": {
       "noGamePath": "Set your Deadlock path or enable dev mode.",
       "noMods": "Download mods from Browse or import a custom VPK to get started.",
@@ -1456,12 +1485,23 @@
     "updateAll": {
       "description": "Re-download every mod flagged with an available update. Each one's enabled state will be restored after the install finishes. Downloads run one at a time and may take a while.",
       "receivingUpdates": "Mods receiving updates ({{count}})",
-      "dismissError": "Dismiss update error",
-      "restoreStateFailed": "The mod was updated, but its previous state could not be fully restored ({{details}})",
-      "ambiguousGlobalState": "This update was not applied because the old multi-file install has mixed Global placement and no saved variant identities. Make every file Global or remove every file from Global, then try again.",
-      "pickReplacement_one": "Pick replacement",
-      "pickReplacement_other": "Pick replacements ({{count}})",
-      "dismissPickNotice": "Dismiss manual pick notice"
+      "updateCount": "Update ({{count}})",
+      "updateAll": "Update all",
+      "updating": "Updating",
+      "confirmTitle_one": "Update {{count}} file?",
+      "confirmTitle_other": "Update {{count}} files?",
+      "hint": "Download available updates and restore each mod's enabled state.",
+      "updateMod": "Update {{name}}",
+      "ignoreMod": "Ignore updates for {{name}}",
+      "ignoreFailed": "Could not ignore updates for {{name}}.",
+      "manualNotice": "{{name}} needs a manual replacement. Its installed files were kept.",
+      "chooseReplacement": "Choose replacement",
+      "needsManualReplacement": "Needs manual replacement",
+      "cancelRequest": "Cancel this update",
+      "cancelFailed": "Could not cancel this update.",
+      "failed": "Could not update {{name}}.",
+      "loadReplacementFailed": "Could not load replacement choices. Try again from the download queue.",
+      "replacementFailed": "Could not replace this file. Your installed version was kept."
     },
     "delete": {
       "title": "Delete Mod?",
@@ -1477,8 +1517,7 @@
       "groupConfirm_other": "Delete {{count}}",
       "progress": "Deleting {{done}} of {{total}}...",
       "skipped_one": "{{count}} mod changed since you selected it and was not deleted.",
-      "skipped_other": "{{count}} mods changed since you selected them and were not deleted.",
-      "replacedChanged": "The old file changed during the update, so it was kept and the update stopped. Refresh and try again."
+      "skipped_other": "{{count}} mods changed since you selected them and were not deleted."
     },
     "details": {
       "loading": "Loading mod details...",
@@ -2950,6 +2989,7 @@
       "queued": "Queued",
       "starting": "Starting",
       "extracting": "Extracting...",
+      "finishing": "Finishing...",
       "updatesIgnored": "Updates ignored",
       "archivedByAuthor": "Archived by author",
       "archivedByAuthorTitle": "The author archived the file you have. Grimoire found no clear replacement for it, so it is not treated as an update."
@@ -2968,8 +3008,7 @@
       "modDetails": "mod details"
     },
     "files": {
-      "archived": "Archived files",
-      "yourVersion": "Your version"
+      "archived": "Archived files"
     },
     "changelog": {
       "unavailable": "Changelog unavailable.",
@@ -3000,9 +3039,10 @@
     "replace": {
       "action": "Replace {{name}} with this",
       "menu": "Replace an installed file with this",
+      "pick": "Pick replacement",
       "confirmTitle": "Replace file?",
+      "dontAskAgain": "Don't ask again",
       "confirmBody": "{{oldName}} is no longer on GameBanana. Grimoire will install {{newName}} and delete {{oldName}}, keeping its enabled and Global settings.",
-      "confirmBodyInstalled": "{{oldName}} is no longer on GameBanana. Grimoire will delete it and keep {{newName}}, which you already have, moving its enabled and Global settings over.",
       "confirm": "Replace"
     },
     "aria": {
@@ -3093,8 +3133,7 @@
     "updateInProgress": "Update already in progress",
     "updateGroupHint_one": "Re-download {{count}} file and restore its enabled state",
     "updateGroupHint_other": "Re-download {{count}} files and restore their enabled state",
-    "updatingProgress": "Updating {{done}}/{{total}}",
-    "updateCount": "Update {{count}}"
+    "updateCount": "Update ({{count}})"
   },
   "imageContextMenu": {
     "image": "Image",

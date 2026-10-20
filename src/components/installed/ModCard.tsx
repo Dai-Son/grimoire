@@ -3,7 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { Loader2, Trash2, AlertTriangle, FolderOpen, FilePlus, Files, ImagePlus, Download, Info, Check, Wrench, Layers, Scissors, Share2, Beaker, PowerOff, Tag as TagIcon, Pencil, MoreHorizontal, Link2, Banana, Fingerprint, ExternalLink, Star, ArrowUpToLine, ImageDown, Link, Unlink, FileWarning, Camera } from 'lucide-react';
 import { MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSeparator, MenuSub, MenuSubContent, MenuSubTrigger, MenuTrigger } from '../common/menu';
 import { showToast } from '../../stores/toastStore';
-import { revealModInFolder } from '../../lib/api';
+import { useAppStore } from '../../stores/appStore';
+import { useModBackupsStore } from '../../stores/modBackupsStore';
+import { getModBackupIdentity } from '../../lib/modBackupIdentity';
+import { restoreModBackup, revealModInFolder } from '../../lib/api';
+import { ModBackupsSubmenu } from './ModBackupsSubmenu';
 import type { ModConflict } from '../../lib/api';
 import type { Mod, GlobalModType } from '../../types/mod';
 import { isCardSelectClick } from './selection';
@@ -15,6 +19,7 @@ import { inferHeroFromTitle, getHeroRenderPath, getHeroFacePosition, HERO_NAMES_
 import { getInstalledCardTaxonomy, type InstalledCardTaxonomy } from '../../lib/installedCardTaxonomy';
 import { formatRelativeDate, formatAbsoluteDate } from '../../lib/dates';
 import { formatBytes } from '../../lib/formatBytes';
+import { shakeElement } from '../../lib/shakeElement';
 import { canOpenImageSource, copyImageToClipboard, resolveImageSource } from '../../lib/imageActions';
 import type { ModList } from '../../lib/modLists';
 import { ModListSubmenu } from './ModListMenu';
@@ -48,6 +53,7 @@ interface ModCardProps {
     categoryName?: string;
     nsfw?: boolean;
     gameBananaId?: number;
+    localGroupId?: string;
     isUnknown?: boolean;
     lockerHero?: string;
     lockerHeroSource?: Mod['lockerHeroSource'];
@@ -72,7 +78,7 @@ interface ModCardProps {
   /** Open the mod author's GameBanana profile in the browser. Undefined for
    *  local mods with no GameBanana source. */
   onViewAuthor?: () => void;
-  onToggle: () => void;
+  onToggle: () => Promise<boolean> | void;
   /** Disable every other mod, enable only this one, and launch the game. Used
    *  for A/B testing a single skin. */
   onSoloLaunch?: () => void;
@@ -793,6 +799,25 @@ export function ModCard({
 }: ModCardProps) {
   const { t } = useTranslation();
   const pointerInside = useRef(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const backups = useModBackupsStore((state) => state.backups);
+  const backupIdentity = getModBackupIdentity(mod, mod.fileName, mod.name);
+  const modBackups = backups.filter((backup) => backup.identityKey === backupIdentity);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const setBackupToDelete = useModBackupsStore((state) => state.setDeleteTarget);
+  const restoreBackup = async (backupId: string) => {
+    if (backupBusy) return;
+    setBackupBusy(true);
+    try {
+      await restoreModBackup(backupId);
+      await useAppStore.getState().loadMods({ silent: true, force: true });
+      showToast(t('installed.backups.restored'), { tone: 'success' });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error), { tone: 'error' });
+    } finally {
+      setBackupBusy(false);
+    }
+  };
   const [hovered, setHovered] = useState(false);
   // Ordinary hover is styled by CSS. Only Shift-selection needs React state.
   // Remember the pointer separately so pressing Shift over a stationary card
@@ -1104,7 +1129,13 @@ export function ModCard({
           </MenuSubContent>
         </MenuSub>
       )}
-      {hasTopActions && <MenuSeparator />}
+      <ModBackupsSubmenu
+        backups={modBackups}
+        busy={backupBusy}
+        onRestore={(backupId) => void restoreBackup(backupId)}
+        onDelete={setBackupToDelete}
+      />
+      {(hasTopActions || modBackups.length > 0) && <MenuSeparator />}
       {hasListActions && lists && onToggleList && onCreateList && (
         <ModListSubmenu
           lists={lists}
@@ -1289,7 +1320,10 @@ export function ModCard({
         </MenuRoot>
       </div>
         <button
-          onClick={onToggle}
+          onClick={async () => {
+            const toggled = await onToggle();
+            if (mod.enabled && toggled === false) shakeElement(cardRef.current);
+          }}
           aria-pressed={mod.enabled}
           aria-label={mod.enabled ? t('installed.card.disableMod') : t('installed.card.enableMod')}
           title={mod.enabled ? t('installed.card.disableMod') : t('installed.card.enableMod')}
@@ -1314,6 +1348,7 @@ export function ModCard({
           this one rather than a second, image-only menu. */}
       <MenuTrigger asChild disabled={selectMode}>
     <div
+      ref={cardRef}
       data-mod-entry-key={entryKey}
       onPointerEnter={() => {
         pointerInside.current = true;
@@ -1473,7 +1508,7 @@ export function ModCard({
               )}
               {updateAvailable && (
                 <Tag
-                  tone="accent"
+                  tone="update"
                   variant="overlay"
                   icon={Download}
                   title={t('installed.card.updateAvailableTitle')}
@@ -1494,10 +1529,10 @@ export function ModCard({
               )}
               {staleSourceCount > 0 && (
                 <Tag
+                  tone="update"
                   variant="overlay"
                   icon={Download}
                   title={t('installed.card.staleSourcesTitle', { count: staleSourceCount })}
-                  className="border-amber-300/70 text-amber-200"
                 >
                   {t('installed.card.staleSourcesBadge', { count: staleSourceCount })}
                 </Tag>

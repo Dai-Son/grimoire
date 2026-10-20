@@ -123,6 +123,7 @@
   --color-state-warning: #facc15;
   --color-state-danger:  #f87171;
   --color-state-info:    #60a5fa;
+  --color-state-update:  #f97316;
 
   /* Third-party brand colors (buttons/links that represent the brand itself). */
   --color-brand-discord: #5865F2;
@@ -1397,11 +1398,15 @@ body {
   pointer-events: none;
   background-image: repeating-linear-gradient(
     135deg,
-    rgba(255, 255, 255, 0.06) 0 8px,
+    var(--stripe-color, rgba(255, 255, 255, 0.06)) 0 8px,
     transparent 8px 20px
   );
   background-size: 28px 28px;
   animation: updateStripes 2.4s linear infinite;
+}
+
+.update-stripes-warning {
+  --stripe-color: color-mix(in srgb, var(--color-state-warning) 7%, transparent);
 }
 
 /* Release notes — styles HTML rendered from GitHub release markdown
@@ -1682,9 +1687,9 @@ body {
 /* Accent Glow for Enabled cards */
 .premium-card-glow-active:hover {
   box-shadow: 
-    0 0 25px rgba(249, 115, 22, 0.12),
+    0 0 25px color-mix(in srgb, var(--color-accent) 12%, transparent),
     0 12px 30px rgba(0, 0, 0, 0.55);
-  border-color: rgba(249, 115, 22, 0.45);
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
 }
 
 /* Warning Glow for Conflict cards */

@@ -45,7 +45,7 @@ import { useAppStore } from '../stores/appStore';
 import AudioPreviewPlayer from './AudioPreviewPlayer';
 import { Skeleton } from './common/Skeleton';
 import { RevealImage } from './common/RevealImage';
-import { ArchivedTag, Button, IconButton, Tag } from './common/ui';
+import { ArchivedTag, Button, CheckboxMark, IconButton, Tag } from './common/ui';
 import { ConfirmModal } from './common/PageComponents';
 import ImageContextMenu from './ImageContextMenu';
 import { MenuContent, MenuItem, MenuRoot, MenuTrigger } from './common/menu';
@@ -89,16 +89,18 @@ interface ModDetailsModalProps {
   /** The installed file was archived by its author and no clear replacement
    *  was found. Shown as a quiet tag: it is not an update. */
   archivedByAuthor?: boolean;
-  /** Installed files the author deleted with no confident successor. Every
-   *  current row offers "Replace <file> with this" (installed rows included,
-   *  which only removes the old file), confirming exactly what gets deleted
-   *  before calling `onReplace`. */
+  /** Installed files the author deleted with no confident successor. Current
+   *  rows without an automatic match offer a replacement picker, confirming
+   *  exactly what gets deleted before calling `onReplace`. */
   replaceableFiles?: ReplaceableFile[];
   onReplace?: (fileId: number, fileName: string, replacedFileId: number) => void;
+  /** Manual queue choices use the replacement action preference and omit reinstall/enable. */
+  manualReplacement?: boolean;
   /** When provided, render a toggle next to the Update/Installed badge that
-   *  flips the underlying mod's ignoreUpdates flag. Only meaningful in the
-   *  installed-mod path; Browse leaves both undefined. */
+   *  flips ignoreUpdates for every installed variant of this submission.
+   *  Only meaningful in the installed-mod path. */
   ignoreUpdates?: boolean;
+  ignoreUpdatesPending?: boolean;
   onToggleIgnoreUpdates?: () => void;
   onClose: () => void;
   onDownload: (fileId: number, fileName: string) => void;
@@ -156,7 +158,9 @@ function ModDetailsModal({
   archivedByAuthor = false,
   replaceableFiles = [],
   onReplace,
+  manualReplacement = false,
   ignoreUpdates,
+  ignoreUpdatesPending = false,
   onToggleIgnoreUpdates,
   onClose,
   onDownload,
@@ -236,6 +240,9 @@ function ModDetailsModal({
   const images = mod.previewMedia?.images ?? [];
   const audioPreviewUrl = mod.previewMedia?.metadata?.audioUrl;
   const soundVolume = useAppStore((state) => state.soundVolume);
+  const settings = useAppStore((state) => state.settings);
+  const saveSettings = useAppStore((state) => state.saveSettings);
+  const prioritizeReplacement = manualReplacement && (settings?.swapManualReplacementActions ?? true);
   // Cursor into the images array - only the lightbox cares about this now
   // that previews are stacked vertically rather than swapped via carousel.
   // It tracks which image is currently zoomed and which one keyboard arrows
@@ -270,8 +277,9 @@ function ModDetailsModal({
   const [deleteCandidate, setDeleteCandidate] = useState<{ mod: DeleteModEntry; fileName: string } | null>(null);
   const [deleteInProgress, setDeleteInProgress] = useState(false);
   const [replaceCandidate, setReplaceCandidate] = useState<
-    { fileId: number; fileName: string; installed: boolean; replaced: ReplaceableFile } | null
+    { fileId: number; fileName: string; replaced: ReplaceableFile } | null
   >(null);
+  const [dontAskAgain, setDontAskAgain] = useState(false);
   // Backdrop dismissal for the two nested overlays. The hook ignores drags
   // that only end on the backdrop, so releasing a text selection (or the
   // lightbox drag) outside the panel no longer closes them.
@@ -383,6 +391,7 @@ function ModDetailsModal({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       if (e.key === 'Escape') {
         if (deleteCandidate) {
           if (!deleteInProgress) setDeleteCandidate(null);
@@ -597,36 +606,73 @@ function ModDetailsModal({
     const isDownloadingThis =
       fileDownload.phase === 'starting' ||
       fileDownload.phase === 'downloading' ||
-      fileDownload.phase === 'extracting';
+      fileDownload.phase === 'extracting' ||
+      fileDownload.phase === 'finishing';
     const isQueuedThis = fileDownload.phase === 'queued';
     // Only this row's own download/queue state should lock its buttons. A
     // download in progress on a *different* file must leave this row clickable
     // so the user can queue several variants in one go.
     const isBusyThis = isDownloadingThis || isQueuedThis;
     const showEnablePill =
+      !manualReplacement &&
       !!installedFileState &&
       !installedFileState.enabled &&
       !!onEnableFile &&
       !isBusyThis;
-    const showDeleteButton = !!installedFileState && !!onDeleteFile;
-    const replaceOptions = !archived && onReplace ? replaceableFiles : [];
-    const pickReplacement = (replaced: ReplaceableFile) =>
-      setReplaceCandidate({ fileId: file.id, fileName: file.fileName, installed: isInstalled, replaced });
+    const showDeleteButton = !manualReplacement && !!installedFileState && !!onDeleteFile;
+    const showDownloadButton = !manualReplacement || (isUpdate ? !isBusyThis : !isInstalled);
+    const replaceOptions = !archived && !isUpdate && !isInstalled && !isBusyThis && onReplace ? replaceableFiles : [];
+    const swapActions = prioritizeReplacement && replaceOptions.length > 0;
+    const pickReplacement = (replaced: ReplaceableFile) => {
+      if (settings?.skipModReplacementConfirmation) {
+        onReplace?.(file.id, file.fileName, replaced.fileId);
+        return;
+      }
+      setDontAskAgain(false);
+      setReplaceCandidate({ fileId: file.id, fileName: file.fileName, replaced });
+    };
     const fileProgress = 'progress' in fileDownload ? fileDownload.progress : null;
     const pct = fileProgress && fileProgress.total > 0
       ? Math.round((fileProgress.downloaded / fileProgress.total) * 100)
       : null;
+    const replacementTitle = replaceOptions.length === 1
+      ? t('modDetails.replace.action', { name: replaceOptions[0].fileName })
+      : t('modDetails.replace.menu');
+    const replacementButton = prioritizeReplacement ? (
+      <Button
+        type="button"
+        variant="primary"
+        icon={Replace}
+        title={replacementTitle}
+        className="min-w-[110px] max-w-full"
+        onClick={replaceOptions.length === 1 ? () => pickReplacement(replaceOptions[0]) : undefined}
+        disabled={isBusyThis}
+      >
+        {t('modDetails.replace.confirm')}
+        {replaceOptions.length > 1 && <ChevronDown className="h-3.5 w-3.5 opacity-70" aria-hidden />}
+      </Button>
+    ) : (
+      <IconButton
+        icon={Replace}
+        label={replacementTitle}
+        className={replaceOptions.length > 1 ? 'w-auto! gap-1 px-2.5' : undefined}
+        onClick={replaceOptions.length === 1 ? () => pickReplacement(replaceOptions[0]) : undefined}
+        disabled={isBusyThis}
+      >
+        {replaceOptions.length > 1 && <ChevronDown className="h-3.5 w-3.5 opacity-70" aria-hidden />}
+      </IconButton>
+    );
 
     return (
       <div
         key={file.id}
         className={`flex flex-wrap items-center gap-3 p-3 rounded-lg border transition-colors sm:flex-nowrap ${
           isUpdate
-            ? 'border-accent/40 bg-accent/5'
+            ? 'border-state-update/40 bg-state-update/5'
             : isActive
-              ? 'border-accent/50 bg-accent/10'
+              ? 'border-green-500/50 bg-green-500/10'
               : isInstalled
-                ? 'border-green-500/30 bg-green-500/5'
+                ? 'border-state-info/30 bg-state-info/5'
                 : archived
                   ? 'border-border/70 bg-bg-secondary/70'
                   : 'border-border bg-bg-tertiary'
@@ -634,11 +680,11 @@ function ModDetailsModal({
       >
         <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md ${
           isUpdate
-            ? 'bg-accent/15 text-accent'
+            ? 'bg-state-update/15 text-state-update'
             : isActive
-              ? 'bg-accent/20 text-accent'
+              ? 'bg-green-500/20 text-green-400'
               : isInstalled
-                ? 'bg-green-500/15 text-green-400'
+                ? 'bg-state-info/15 text-state-info'
                 : archived
                   ? 'bg-bg-tertiary text-text-tertiary'
                   : 'bg-bg-secondary text-text-secondary'
@@ -647,8 +693,13 @@ function ModDetailsModal({
         </div>
         <div className="min-w-0 flex-1 text-left">
           <div className="flex min-w-0 max-w-full items-center gap-2">
-            <p className="min-w-0 flex-1 truncate text-sm font-medium" title={file.fileName}>{file.fileName}</p>
+            <p className="min-w-0 truncate text-sm font-medium" title={file.fileName}>{file.fileName}</p>
             {archived && <ArchivedTag />}
+            {isActive && (
+              <span className="flex-shrink-0 self-center rounded bg-state-success/20 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-state-success">
+                {t('common.status.active')}
+              </span>
+            )}
           </div>
           {file.description && (
             <p className="text-xs text-text-secondary/90 mt-0.5 truncate" title={file.description}>
@@ -675,18 +726,13 @@ function ModDetailsModal({
           {isDownloadingThis && pct !== null && (
             <div className="mt-2 h-1 w-full rounded-full bg-bg-secondary overflow-hidden">
               <div
-                className="h-full bg-accent transition-all duration-200"
+                className={`h-full transition-all duration-200 ${isUpdate ? 'bg-state-update' : 'bg-accent'}`}
                 style={{ width: `${pct}%` }}
               />
             </div>
           )}
         </div>
         <div className="ml-[52px] flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 sm:ml-0 sm:flex-none">
-          {isActive && (
-            <span className="flex-shrink-0 self-center rounded bg-accent/20 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-accent">
-              {t('common.status.active')}
-            </span>
-          )}
           {showEnablePill && installedFileState && (
             <Button
               type="button"
@@ -711,31 +757,41 @@ function ModDetailsModal({
               disabled={isBusyThis || deleteInProgress}
             />
           )}
-          {replaceOptions.length === 1 && (
+          {swapActions && (
             <IconButton
-              icon={Replace}
-              label={t('modDetails.replace.action', { name: replaceOptions[0].label })}
-              onClick={() => pickReplacement(replaceOptions[0])}
+              icon={Download}
+              label={t('modDetails.actions.install')}
+              onClick={() => onDownload(file.id, file.fileName)}
               disabled={isBusyThis}
             />
           )}
+          {replaceOptions.length === 1 && replacementButton}
           {replaceOptions.length > 1 && (
             <MenuRoot kind="dropdown">
               <MenuTrigger asChild disabled={isBusyThis}>
-                <IconButton icon={Replace} label={t('modDetails.replace.menu')} disabled={isBusyThis} />
+                {replacementButton}
               </MenuTrigger>
-              <MenuContent>
+              <MenuContent variant="picker" className="w-[300px] max-w-[calc(100vw-24px)]">
+                <p className="px-3 pb-1 pt-2 text-2xs uppercase tracking-wider text-text-secondary">
+                  {t('modDetails.replace.pick')}
+                </p>
                 {replaceOptions.map((replaced) => (
-                  <MenuItem key={replaced.fileId} onSelect={() => pickReplacement(replaced)}>
-                    {t('modDetails.replace.action', { name: replaced.label })}
+                  <MenuItem
+                    key={replaced.fileId}
+                    variant="picker"
+                    icon={FileArchive}
+                    title={t('modDetails.replace.action', { name: replaced.fileName })}
+                    onSelect={() => pickReplacement(replaced)}
+                  >
+                    {replaced.label}
                   </MenuItem>
                 ))}
               </MenuContent>
             </MenuRoot>
           )}
-          <Button
+          {showDownloadButton && !swapActions && <Button
             type="button"
-            variant={isUpdate || !isInstalled ? 'primary' : 'secondary'}
+            variant={isUpdate ? 'update' : !isInstalled ? 'primary' : 'secondary'}
             onClick={() => onDownload(file.id, file.fileName)}
             disabled={isBusyThis}
             className="min-w-[110px] max-w-full"
@@ -745,9 +801,11 @@ function ModDetailsModal({
                 <Loader2 className="w-4 h-4 animate-spin" />
                 {fileDownload.phase === 'extracting'
                   ? t('modDetails.status.extracting')
-                  : pct !== null
-                    ? `${pct}%`
-                    : t('modDetails.status.starting')}
+                  : fileDownload.phase === 'finishing'
+                    ? t('modDetails.status.finishing')
+                    : pct !== null
+                      ? `${pct}%`
+                      : t('modDetails.status.starting')}
               </>
             ) : isQueuedThis ? (
               <>
@@ -762,7 +820,7 @@ function ModDetailsModal({
                 {actionLabel(file.id, archived)}
               </>
             )}
-          </Button>
+          </Button>}
         </div>
       </div>
     );
@@ -790,11 +848,6 @@ function ModDetailsModal({
                   <ChevronRight className="w-4 h-4 flex-shrink-0" />
                 )}
                 <span className="font-medium truncate">{t('modDetails.files.archived')}</span>
-                {installedFileIsArchived && (
-                  <span className="flex-shrink-0 rounded-full border border-green-500/40 bg-green-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-400">
-                    {t('modDetails.files.yourVersion')}
-                  </span>
-                )}
               </span>
               <span className="flex-shrink-0 text-2xs leading-none text-text-tertiary">
                 ({archivedFiles.length})
@@ -1008,7 +1061,7 @@ function ModDetailsModal({
           )}
           <div className="flex items-center gap-2 flex-shrink-0">
             {updateAvailable && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent border border-accent/40">
+              <span className="inline-flex items-center gap-1 rounded-full bg-state-update/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-state-update border border-state-update/40">
                 <Download className="w-2.5 h-2.5" />
                 {t('profiles.actions.update')}
               </span>
@@ -1032,6 +1085,8 @@ function ModDetailsModal({
               <button
                 type="button"
                 onClick={onToggleIgnoreUpdates}
+                disabled={ignoreUpdatesPending}
+                aria-busy={ignoreUpdatesPending}
                 className={
                   ignoreUpdates
                     ? 'inline-flex items-center gap-1 rounded-full bg-bg-tertiary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-secondary border border-border hover:text-text-primary hover:border-accent/40 transition-colors'
@@ -1215,24 +1270,33 @@ function ModDetailsModal({
         {replaceCandidate && onReplace && (
           <ConfirmModal
             isOpen
+            showClose
             title={t('modDetails.replace.confirmTitle')}
-            message={
-              replaceCandidate.installed
-                ? t('modDetails.replace.confirmBodyInstalled', {
-                    newName: replaceCandidate.fileName,
-                    oldName: replaceCandidate.replaced.label,
-                  })
-                : t('modDetails.replace.confirmBody', {
-                    newName: replaceCandidate.fileName,
-                    oldName: replaceCandidate.replaced.label,
-                  })
-            }
+            message={t('modDetails.replace.confirmBody', {
+              newName: replaceCandidate.fileName,
+              oldName: replaceCandidate.replaced.label,
+            })}
             confirmLabel={t('modDetails.replace.confirm')}
             onCancel={() => setReplaceCandidate(null)}
             onConfirm={() => {
               setReplaceCandidate(null);
+              if (dontAskAgain && settings) {
+                void saveSettings({ ...settings, skipModReplacementConfirmation: true });
+              }
               onReplace(replaceCandidate.fileId, replaceCandidate.fileName, replaceCandidate.replaced.fileId);
             }}
+            footerStart={
+              <label className="group flex cursor-pointer select-none items-center gap-2 text-xs text-text-secondary">
+                <input
+                  type="checkbox"
+                  checked={dontAskAgain}
+                  onChange={(event) => setDontAskAgain(event.target.checked)}
+                  className="peer sr-only"
+                />
+                <CheckboxMark checked={dontAskAgain} className="peer-focus-visible:ring-2 peer-focus-visible:ring-accent" />
+                {t('modDetails.replace.dontAskAgain')}
+              </label>
+            }
           />
         )}
 

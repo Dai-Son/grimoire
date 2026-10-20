@@ -6,6 +6,9 @@ import Sidebar from './Sidebar';
 import WelcomeModal from './WelcomeModal';
 import SyncIndicator from './SyncIndicator';
 import DownloadQueueIndicator from './DownloadQueueIndicator';
+import { ModUpdateNotices, ModUpdateReplacementHost } from './mods/ModUpdatesHost';
+import { listenForModUpdates, useModUpdatesStore } from '../stores/modUpdatesStore';
+import { getDownloadQueueActivitySnapshot } from '../lib/downloadActivity';
 import AppUpdateBanner from './AppUpdateBanner';
 import { ConfirmModal } from './common/PageComponents';
 import { ToastStack } from './common/ToastStack';
@@ -36,6 +39,7 @@ export default function Layout() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  useEffect(listenForModUpdates, []);
   // Keyed on the top-level route only, so sub-routes (/locker/<hero>, /settings/<section>)
   // swap content in place instead of remounting the whole page.
   const outletKey = location.pathname.split('/')[1];
@@ -68,6 +72,7 @@ export default function Layout() {
   const oledMode = useAppStore((s) => s.settings?.oledMode);
   const loadStoreSettings = useAppStore((s) => s.loadSettings);
   const loadAppearanceImages = useAppStore((s) => s.loadAppearanceImages);
+  const activeDeadlockPath = useAppStore((s) => getActiveDeadlockPath(s.settings));
 
   // Batch local import. Hosted here rather than on Installed because that page
   // early-returns an empty state with no mods: a first-ever import flips it to
@@ -83,6 +88,12 @@ export default function Layout() {
     loadStoreSettings();
     loadAppearanceImages();
   }, [loadStoreSettings, loadAppearanceImages]);
+  useEffect(() => {
+    if (activeDeadlockPath) {
+      const state = useAppStore.getState();
+      void state.loadMods({ silent: state.modsLoaded });
+    }
+  }, [activeDeadlockPath]);
   useEffect(() => {
     applyAccentColor(accentColor);
   }, [accentColor]);
@@ -145,6 +156,12 @@ export default function Layout() {
       const state = useAppStore.getState();
       if (!getActiveDeadlockPath(state.settings)) return;
       if (state.modsLoading) return;
+      const updates = useModUpdatesStore.getState();
+      const downloads = getDownloadQueueActivitySnapshot();
+      // Completed jobs refresh the library. Refocusing mid-transfer should not
+      // start another full scan alongside that work, especially for large libraries.
+      if (updates.submittingModIds.size > 0 || updates.state.preparing ||
+        (updates.state.busy && (downloads.current || downloads.queue.length > 0 || downloads.requested.length > 0))) return;
       const now = Date.now();
       if (now - lastRun < 1500) return;
       lastRun = now;
@@ -321,10 +338,12 @@ export default function Layout() {
       </div>
       {/* Status indicators stack in the bottom-right corner. */}
       <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2">
+        <ModUpdateNotices />
         <DownloadQueueIndicator />
         <SyncIndicator />
       </div>
       <ToastStack />
+      <ModUpdateReplacementHost />
       <ConfirmModal
         isOpen={!!suspiciousPrompt}
         title={t('layout.suspicious.title')}

@@ -1153,6 +1153,15 @@ export interface AppSettings {
   /** Installing a different file of an already-enabled mod disables the
    *  prior variant (not about updates). */
   autoDisableSiblingVariants: boolean;
+  /** Pair one unmatched installed file with one remaining new upload after
+   *  normal update matching, even when their names and descriptions differ. */
+  autoMatchRemainingFiles: boolean;
+  /** Skip the confirmation before manually replacing an installed mod file. */
+  skipModReplacementConfirmation: boolean;
+  /** Make Replace the main action in the manual update replacement view. */
+  swapManualReplacementActions: boolean;
+  /** Retain removed mod files for 24 hours. Disabling stops new captures only. */
+  keepModBackups: boolean;
   /** After a successful GameBanana download, immediately enable the installed
    *  VPKs instead of leaving them in the disabled library. Off by default. */
   autoEnableDownloads: boolean;

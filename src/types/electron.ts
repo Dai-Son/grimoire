@@ -1,4 +1,5 @@
 import type { ModSafetyPrompt, InstalledModSafety } from './modSafety';
+import type { ChooseModUpdateReplacementArgs, ModUpdateState, StartModUpdatesArgs } from './modUpdates';
 import type {
     Mod,
     AppSettings,
@@ -113,12 +114,12 @@ export interface DownloadModArgs {
     modName?: string;
     section?: string;
     categoryId?: number;
-    /** The download replaces installed content (an update, a confirmed
-     *  replace, a reinstall, or a merge-source refresh). The caller removes
-     *  what it replaces and restores the enabled and Global state itself, so
-     *  the backend leaves the mod's other files enabled instead of switching
-     *  sibling variants off. */
+    /** Replaces installed content without auto-disabling sibling variants.
+     *  With replacementModIds, main owns cleanup and state restoration.
+     *  Legacy merge/source callers still finalize their own replacement. */
     isReplacement?: boolean;
+    /** Installed sources finalized by main after a successful queued install. */
+    replacementModIds?: string[];
 }
 
 export interface GetCategoriesArgs {
@@ -534,6 +535,7 @@ export interface StopGameResult {
 }
 
 export interface DownloadProgressData {
+    jobId?: string;
     modId: number;
     fileId: number;
     downloaded: number;
@@ -541,6 +543,7 @@ export interface DownloadProgressData {
 }
 
 export interface DownloadServerStatusData {
+    jobId?: string;
     modId: number;
     fileId: number;
     server: string;
@@ -566,11 +569,15 @@ export interface GameBananaFileServerDiagnostics {
 }
 
 export interface DownloadEventData {
+    jobId?: string;
     modId: number;
     fileId: number;
+    /** Replaced installed sources, retained until the renderer's fresh scan. */
+    replacementModIds?: string[];
 }
 
 export interface DownloadErrorData {
+    jobId?: string;
     modId: number;
     fileId: number;
     errorCode: 'MISSING_7ZIP' | 'EXTRACTION_FAILED' | 'CANCELLED_BY_USER' | 'UNKNOWN';
@@ -586,6 +593,10 @@ export interface ModsAutoDisabledData {
 }
 
 export interface DownloadQueueItem {
+    /** Assigned by main. Optimistic renderer requests have no job id yet. */
+    jobId?: string;
+    phase?: 'queued' | 'preparing' | 'downloading' | 'paused' | 'installing' | 'finalizing';
+    progress?: { downloaded: number; total: number };
     modId: number;
     fileId: number;
     fileName: string;
@@ -839,6 +850,10 @@ export interface LockerImageEdit {
 }
 
 export interface ElectronAPI {
+    listModBackups: () => Promise<import('./modBackup').ModBackupSummary[]>;
+    restoreModBackup: (backupId: string) => Promise<void>;
+    deleteModBackup: (backupId: string) => Promise<void>;
+    onModBackupsChanged: (callback: () => void) => () => void;
     // Host platform ('win32', 'linux', ...), captured in the preload. The
     // renderer uses it to decide whether to draw the custom Windows title
     // bar strip (the native frame is hidden on Windows only).
@@ -852,8 +867,10 @@ export interface ElectronAPI {
     detectDeadlock: () => Promise<string | null>;
     validateDeadlockPath: (path: string) => Promise<boolean>;
     createDevDeadlockPath: () => Promise<string>;
+    copyModsToDev: () => Promise<void>;
+    onCopyModsToDevProgress: (callback: (percent: number) => void) => () => void;
     getSettings: () => Promise<AppSettings>;
-    setSettings: (settings: AppSettings) => Promise<void>;
+    setSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
 
     // Mod transfer between mod managers (neutral interchange format; no cloud)
     interchange: {
@@ -904,7 +921,6 @@ export interface ElectronAPI {
     deleteMod: (entry: DeleteModEntry) => Promise<DeleteModsResult>;
     deleteMods: (entries: DeleteModEntry[]) => Promise<DeleteModsResult>;
     onDeleteModsProgress: (callback: (progress: DeleteModsProgress) => void) => () => void;
-    assertReplacementSafety: (modIds: string[]) => Promise<void>;
     revealModInFolder: (modId: string) => Promise<void>;
     detectUnknownModFilters: (modId: string, requestId?: string) => Promise<UnknownModFilterGuess>;
     detectUnknownModCacheBulk: (requests: Array<{ modId: string; requestId?: string }>) => Promise<UnknownModFilterGuess[]>;
@@ -919,9 +935,6 @@ export interface ElectronAPI {
         modIds: string[],
         target: LocalVariantGroupTarget
     ) => Promise<SetLocalVariantGroupResult>;
-    restoreLocalVariantGroupReplacement: (
-        args: RestoreLocalVariantGroupReplacementArgs
-    ) => Promise<void>;
     setVariantLabel: (modId: string, label: string) => Promise<Mod>;
     setModLockerHero: (modId: string, heroName: string | null) => Promise<Mod>;
     getHeroPortraits: (heroName: string) => Promise<HeroPortrait[]>;
@@ -1162,6 +1175,11 @@ export interface ElectronAPI {
     getModUpdates: (args: GetModUpdatesArgs) => Promise<GameBananaModUpdatesResponse>;
     getSubmitterLinks: (memberId: number) => Promise<GameBananaArtistLink[]>;
     downloadMod: (args: DownloadModArgs) => Promise<void>;
+    startModUpdates: (args: StartModUpdatesArgs) => Promise<void>;
+    getModUpdateState: () => Promise<ModUpdateState>;
+    onModUpdateStateUpdated: (callback: (state: ModUpdateState) => void) => () => void;
+    chooseModUpdateReplacement: (args: ChooseModUpdateReplacementArgs) => Promise<void>;
+    removeModUpdateRequest: (requestId: string) => Promise<void>;
     getGameBananaSections: () => Promise<GameBananaSection[]>;
     getGameBananaCategories: (args: GetCategoriesArgs) => Promise<GameBananaCategoryNode[]>;
     getCollection: (args: { collectionId: number }) => Promise<GameBananaCollection>;
@@ -1222,10 +1240,13 @@ export interface ElectronAPI {
 
     // Download Queue
     getDownloadQueue: () => Promise<DownloadQueueItem[]>;
+    moveQueuedDownload: (jobId: string, beforeJobId: string | null) => Promise<boolean>;
+    prioritizeQueuedDownload: (jobId: string) => Promise<boolean>;
     getCurrentDownload: () => Promise<DownloadQueueItem | null>;
     removeFromQueue: (modId: number, fileId?: number) => Promise<boolean>;
     cancelActiveDownload: () => Promise<boolean>;
-    cancelDownloadTarget: (modId: number, fileId: number) => Promise<boolean>;
+    cancelDownloadTarget: (modId: number, fileId: number, jobId?: string) => Promise<boolean>;
+    cancelQueuedDownloads: (pendingTargets?: Pick<DownloadQueueItem, 'modId' | 'fileId'>[]) => Promise<void>;
     onDownloadQueueUpdated: (callback: (data: DownloadQueueData) => void) => () => void;
 
     // GameBanana 1-Click protocol handler

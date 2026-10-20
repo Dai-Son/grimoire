@@ -42,7 +42,12 @@ vi.mock('electron', () => ({
     app: { getVersion: () => '0.0.0-test', getAppPath: () => '/fake/app', isPackaged: false },
 }));
 vi.mock('./deadlock', () => ({ metaKeyFor: vi.fn((path: string) => path) }));
-vi.mock('./settings', () => ({ loadSettings: vi.fn(() => ({})) }));
+vi.mock('./settings', async importOriginal => ({
+    ...(await importOriginal<typeof import('./settings')>()), loadSettings: vi.fn(() => ({})),
+}));
+
+const backupMocks = vi.hoisted(() => ({ captureModBackup: vi.fn(async (..._args: unknown[]) => null) }));
+vi.mock('./modBackups', () => backupMocks);
 
 const modMocks = vi.hoisted(() => ({
     scanMods: vi.fn(),
@@ -132,6 +137,7 @@ function useMerge(sources: Array<ReturnType<typeof source>>): void {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    backupMocks.captureModBackup.mockReset().mockResolvedValue(null);
     safetyMocks.carryVpkSafety.mockResolvedValue('trusted');
     safetyMocks.assertVpkSafety.mockResolvedValue(undefined);
     modMocks.enableModUnlocked.mockImplementation(async (_dl: string, id: string) => {
@@ -141,6 +147,17 @@ beforeEach(() => {
 });
 
 describe('unmerge with a source the user keeps disabled', () => {
+    it('leaves the merge and its disabled sources unchanged when backup capture fails', async () => {
+        useMerge([a, b, c]);
+        backupMocks.captureModBackup.mockRejectedValueOnce(new Error('Backup disk full'));
+
+        await expect(unmergeMod('/game', target.id)).rejects.toThrow('Backup disk full');
+
+        expect(modMocks.enableModUnlocked).not.toHaveBeenCalled();
+        expect(fsMocks.unlink).not.toHaveBeenCalled();
+        expect(metadataMocks.removeModMetadata).not.toHaveBeenCalled();
+    });
+
     it('restores the others, leaves that one disabled and still removes the merge', async () => {
         useMerge([a, b, c]);
 

@@ -38,10 +38,10 @@ import type {
   ImportCustomModsBatchResult,
   ImportCustomModsProgress,
   LocalVariantGroupTarget,
-  RestoreLocalVariantGroupReplacementArgs,
   SetLocalVariantGroupResult,
 } from '../types/electron';
 import { showToast } from '../stores/toastStore';
+import type { ChooseModUpdateReplacementArgs, ModUpdateState, StartModUpdatesArgs } from '../types/modUpdates';
 import i18n from '../i18n';
 
 // Sentinel that matches the Error thrown by the main process
@@ -100,12 +100,21 @@ export async function createDevDeadlockPath(): Promise<string> {
   return window.electronAPI.createDevDeadlockPath();
 }
 
+export async function copyModsToDev(onProgress?: (percent: number) => void): Promise<void> {
+  const unsubscribe = onProgress ? window.electronAPI.onCopyModsToDevProgress(onProgress) : undefined;
+  try {
+    await window.electronAPI.copyModsToDev();
+  } finally {
+    unsubscribe?.();
+  }
+}
+
 export async function getSettings(): Promise<AppSettings> {
   return window.electronAPI.getSettings();
 }
 
-export async function setSettings(settings: AppSettings): Promise<void> {
-  return window.electronAPI.setSettings(settings);
+export async function setSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+  return window.electronAPI.setSettings(patch);
 }
 
 // Mod transfer between mod managers (neutral interchange format; no cloud)
@@ -163,11 +172,23 @@ export async function deleteMod(mod: DeleteModEntry): Promise<DeleteModsResult> 
   return warnSkippedDeletes(await withGameRunningWarning(() => window.electronAPI.deleteMod(toDeleteEntry(mod))));
 }
 
-/** Delete the file an update replaces. A skip means the old file changed, so
- *  the update must stop before it restores state onto the new one. */
-export async function deleteReplacedMod(mod: DeleteModEntry): Promise<void> {
-  const { skipped } = await withGameRunningWarning(() => window.electronAPI.deleteMod(toDeleteEntry(mod)));
-  if (skipped.length > 0) throw new Error(i18n.t('installed.delete.replacedChanged'));
+export function listModBackups(): Promise<import('../types/modBackup').ModBackupSummary[]> {
+  return window.electronAPI.listModBackups();
+}
+
+export async function restoreModBackup(backupId: string): Promise<void> {
+  try {
+    await window.electronAPI.restoreModBackup(backupId);
+  } catch (error) {
+    if (String(error).includes('MOD_BACKUP_INSTALL_CHANGED')) {
+      throw new Error(i18n.t('installed.backups.installChanged'), { cause: error });
+    }
+    throw error;
+  }
+}
+
+export function deleteModBackup(backupId: string): Promise<void> {
+  return window.electronAPI.deleteModBackup(backupId);
 }
 
 export async function deleteMods(
@@ -182,10 +203,6 @@ export async function deleteMods(
   } finally {
     unsubscribe?.();
   }
-}
-
-export async function assertReplacementSafety(modIds: string[]): Promise<void> {
-  return window.electronAPI.assertReplacementSafety(modIds);
 }
 
 export async function revealModInFolder(modId: string): Promise<void> {
@@ -240,12 +257,6 @@ export async function setLocalVariantGroup(
   target: LocalVariantGroupTarget
 ): Promise<SetLocalVariantGroupResult> {
   return withGameRunningWarning(() => window.electronAPI.setLocalVariantGroup(modIds, target));
-}
-
-export async function restoreLocalVariantGroupReplacement(
-  args: RestoreLocalVariantGroupReplacementArgs
-): Promise<void> {
-  return window.electronAPI.restoreLocalVariantGroupReplacement(args);
 }
 
 export async function setVariantLabel(modId: string, label: string): Promise<Mod> {
@@ -557,7 +568,7 @@ export function onImportCustomModsProgress(
   return window.electronAPI.onImportCustomModsProgress(callback);
 }
 
-export type { ImportCustomModArgs, ImportCustomModResult, ImportCustomModsBatchResult, ImportCustomModsProgress, LocalVariantGroupTarget, RestoreLocalVariantGroupReplacementArgs, SetLocalVariantGroupResult };
+export type { ImportCustomModArgs, ImportCustomModResult, ImportCustomModsBatchResult, ImportCustomModsProgress, LocalVariantGroupTarget, SetLocalVariantGroupResult };
 
 /** Build a soul-container override VPK from a user GLB and install it as a
  *  tracked local mod. Returns the full enriched mod list after install. */
@@ -937,11 +948,32 @@ export async function downloadMod(
   section?: string,
   categoryId?: number,
   modName?: string,
-  isReplacement?: boolean
+  isReplacement?: boolean,
+  replacementModIds?: string[]
 ): Promise<void> {
   return withGameRunningWarning(() =>
-    window.electronAPI.downloadMod({ modId, fileId, fileName, section, categoryId, modName, isReplacement })
+    window.electronAPI.downloadMod({ modId, fileId, fileName, section, categoryId, modName, isReplacement, replacementModIds })
   );
+}
+
+export function startModUpdates(args: StartModUpdatesArgs): Promise<void> {
+  return withGameRunningWarning(() => window.electronAPI.startModUpdates(args));
+}
+
+export function getModUpdateState(): Promise<ModUpdateState> {
+  return window.electronAPI.getModUpdateState();
+}
+
+export function onModUpdateStateUpdated(callback: (state: ModUpdateState) => void): () => void {
+  return window.electronAPI.onModUpdateStateUpdated(callback);
+}
+
+export function chooseModUpdateReplacement(args: ChooseModUpdateReplacementArgs): Promise<void> {
+  return withGameRunningWarning(() => window.electronAPI.chooseModUpdateReplacement(args));
+}
+
+export function removeModUpdateRequest(requestId: string): Promise<void> {
+  return window.electronAPI.removeModUpdateRequest(requestId);
 }
 
 export async function getGamebananaSections(): Promise<GameBananaSection[]> {

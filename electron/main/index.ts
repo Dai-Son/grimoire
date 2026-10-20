@@ -1,4 +1,5 @@
 import { app, BrowserWindow, shell, session, protocol, nativeTheme, screen } from 'electron';
+import { cleanupExpiredModBackups } from './services/modBackups';
 import { windowBackgroundColor } from '../../src/lib/oledMode';
 import { join, resolve } from 'path';
 import { pathToFileURL } from 'url';
@@ -87,11 +88,13 @@ import './ipc/mods';
 import './ipc/crashAdvisories';
 import { startCrashAdvisories } from './services/crashAdvisories';
 import './ipc/gamebanana';
+import './ipc/modUpdates';
 import './ipc/gamebananaFileServers';
 import './ipc/system';
 import './ipc/conflicts';
 import './ipc/profiles';
 import './ipc/snapshots';
+import './ipc/modBackups';
 import './ipc/modDatabase';
 import './ipc/crosshairPresets';
 import './ipc/cursorPacks';
@@ -129,7 +132,7 @@ import {
     type ForgeInstallRequest,
 } from './services/forgeBridge';
 import { installForgeVpk } from './services/download';
-import { healModFoldersExclusive, runExclusiveModMutation } from './services/mods';
+import { healModFolders, runExclusiveModMutation } from './services/mods';
 import { backfillMissingMetadataHashes, recoverPrunedIdentities } from './services/metadata';
 import { backfillImprintedFlags } from './services/imprintMods';
 import { destroyDiscordRpc } from './services/discordRpc';
@@ -197,12 +200,17 @@ async function handleForgeInstall(request: ForgeInstallRequest): Promise<void> {
 async function runStartupMetadataMaintenance(): Promise<void> {
     const deadlockPath = getConfiguredDeadlockPath();
     if (!deadlockPath) return;
+    const devMode = loadSettings().devMode;
+    const stillActive = () => getConfiguredDeadlockPath() === deadlockPath && loadSettings().devMode === devMode;
 
     try {
-        await healModFoldersExclusive(deadlockPath);
+        await runExclusiveModMutation(async () => {
+            if (stillActive()) await healModFolders(deadlockPath);
+        });
     } catch (error) {
         console.warn('[mods] Startup heal failed:', error);
     }
+    if (!stillActive()) return;
 
     try {
         const updated = await backfillMissingMetadataHashes(deadlockPath, (apply) => runExclusiveModMutation(apply));
@@ -212,6 +220,7 @@ async function runStartupMetadataMaintenance(): Promise<void> {
     } catch (error) {
         console.warn('[Metadata] Startup SHA-256 backfill failed:', error);
     }
+    if (!stillActive()) return;
 
     const recovered = recoverPrunedIdentities();
     if (recovered > 0) {
@@ -569,6 +578,7 @@ if (!gotTheLock) {
 
         createWindow();
         startCrashAdvisories();
+        void cleanupExpiredModBackups().catch((error) => console.warn('[ModBackups] Startup cleanup failed:', error));
 
         // Start the DeadlockForge local install bridge. No-op unless the user
         // has switched it on in Settings, so the listening socket does not
