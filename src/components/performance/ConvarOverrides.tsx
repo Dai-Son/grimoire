@@ -17,7 +17,8 @@ interface ConvarOverridesProps {
 }
 
 const KEY_RE = /^[A-Za-z_][\w.]*$/;
-const invalidValue = (value: string) => !value || value.includes('//') || /[\r\n"]/.test(value);
+// eslint-disable-next-line no-control-regex
+const invalidValue = (value: string) => !value || value.includes('//') || /["\\{}\u0000-\u001f\u007f\u2028\u2029]/.test(value);
 
 /**
  * Global convar pins, shared by every preset. Each row has its own on/off

@@ -30,6 +30,7 @@ import { getGameinfoPath } from './deadlock';
 import { applyVideo, getVideoPath, revertVideo, videoApplied, type VideoState } from './performanceVideo';
 import type {
     PerformanceConfigStatus,
+    PerformanceConvarPins,
     PerformancePresetSummary,
 } from '../../../src/types/electron';
 import { keyExcluded } from './performancePresetGen';
@@ -108,18 +109,9 @@ const STATE_FILENAME = 'grimoire-performance.json';
 type OverrideEntry = { value?: string; omit?: boolean };
 type Overrides = Record<string, OverrideEntry>;
 
-/** A user-pinned convar value, shared by every preset. Disabling a pin keeps
- *  its value so turning it back on needs no retyping. */
-export interface ConvarPin {
-    value: string;
-    enabled: boolean;
-}
-
-export type ConvarPins = Record<string, ConvarPin>;
-
 /** One change to the global pin map: set/replace a value, remove the pin with
  *  `value: null`, or toggle it while keeping its value. */
-export interface ConvarPinUpdate {
+interface ConvarPinUpdate {
     value?: string | null;
     enabled?: boolean;
 }
@@ -140,11 +132,6 @@ export interface ApplyOptions {
     /** Write the preset's video values over ones changed in game since. */
     restoreVideo?: boolean;
     videoVariant?: string | null;
-    /** One-shot edits to the saved override map for the preset being applied:
-     *  a string pins that convar value, null removes the pin (back to the
-     *  preset's own value). Applied after hand-edit harvesting, so clearing a
-     *  pin is not re-banked from the value still in the file. */
-    overrideUpdates?: Record<string, string | null>;
     /** One-shot edits to the global pin map, shared by every preset. */
     pinnedUpdates?: Record<string, ConvarPinUpdate>;
 }
@@ -631,46 +618,50 @@ export function applyPerformanceConfig(
             const appliedOptIns = sidecar?.optIns ?? [];
             // A toggled-off opt-in has no line in the file, so the harvest
             // cannot see its banked value. Hold it so toggling back on restores it.
+            // A key an enabled pin wrote shows the pin's value, not the user's
+            // per-preset one, so hold that too and never bank the pin's value.
             const offKeys = new Set(
                 appliedPreset.optIn
                     .map((control) => control.key)
                     .filter((key) => !appliedOptIns.includes(key))
             );
-            const held = Object.fromEntries(
-                Object.entries(saved[appliedPreset.id] ?? {}).filter(
-                    ([okey]) => okey.startsWith('ConVars/') && offKeys.has(okey.slice('ConVars/'.length))
-                )
+            const pinnedKeys = new Set(
+                Object.entries(sidecar?.pinnedConvars ?? {})
+                    .filter(([, pin]) => pin.enabled)
+                    .map(([key]) => key)
             );
-            saved[appliedPreset.id] = {
-                ...held,
-                ...harvestOverrides(
-                    content,
-                    appliedPreset,
-                    effectiveConvars(appliedPreset, appliedOptIns),
-                    readMarker(applied),
-                    // No sidecar keeps the old marker-only reading.
-                    sidecar !== null && sidecar.classification !== CLASSIFICATION_HASH
-                ),
-            };
+            const held = Object.fromEntries(
+                Object.entries(saved[appliedPreset.id] ?? {}).filter(([okey]) => {
+                    if (!okey.startsWith('ConVars/')) return false;
+                    const key = okey.slice('ConVars/'.length);
+                    return offKeys.has(key) || pinnedKeys.has(key);
+                })
+            );
+            const harvested = Object.fromEntries(
+                Object.entries(
+                    harvestOverrides(
+                        content,
+                        appliedPreset,
+                        effectiveConvars(appliedPreset, appliedOptIns),
+                        readMarker(applied),
+                        // No sidecar keeps the old marker-only reading.
+                        sidecar !== null && sidecar.classification !== CLASSIFICATION_HASH
+                    )
+                ).filter(([okey]) => !(okey.startsWith('ConVars/') && pinnedKeys.has(okey.slice('ConVars/'.length))))
+            );
+            saved[appliedPreset.id] = { ...held, ...harvested };
         }
-        // Per-preset hand edits, then the global pin map layered on top. A
-        // disabled pin suppresses any per-preset value for that key.
+        // Per-preset hand edits, then the enabled global pins on top. An off
+        // pin writes nothing, so the per-preset value or the preset's own
+        // value shows through.
         let perPresetOverrides: Overrides = {};
         if (!opts?.resetOverrides) {
             perPresetOverrides = saved[preset.id] ?? {};
         } else {
             delete saved[preset.id];
         }
-        if (opts?.overrideUpdates) {
-            perPresetOverrides = { ...perPresetOverrides };
-            for (const [key, value] of Object.entries(opts.overrideUpdates)) {
-                const okey = key.startsWith('ConVars/') ? key : `ConVars/${key}`;
-                if (value === null) delete perPresetOverrides[okey];
-                else perPresetOverrides[okey] = { value };
-            }
-        }
 
-        const pins: ConvarPins = { ...(sidecar?.pinnedConvars ?? {}) };
+        const pins: PerformanceConvarPins = { ...(sidecar?.pinnedConvars ?? {}) };
         if (opts?.pinnedUpdates) {
             for (const [key, update] of Object.entries(opts.pinnedUpdates)) {
                 const current = pins[key];
@@ -687,18 +678,11 @@ export function applyPerformanceConfig(
             }
         }
 
-        // A pin's value must not be harvested as a hand edit, and an off pin
-        // must suppress the per-preset copy so the preset value comes back.
-        for (const key of [...Object.keys(pins), ...Object.keys(opts?.pinnedUpdates ?? {})]) {
-            delete perPresetOverrides[`ConVars/${key}`];
-            if (appliedPreset) delete saved[appliedPreset.id]?.[`ConVars/${key}`];
-        }
-
+        // A pin on a key a newer build excludes stays in the sidecar but is
+        // never written.
         const overrides: Overrides = { ...perPresetOverrides };
         for (const [key, pin] of Object.entries(pins)) {
-            const okey = `ConVars/${key}`;
-            if (pin.enabled) overrides[okey] = { value: pin.value };
-            else delete overrides[okey];
+            if (pin.enabled && !keyExcluded(key, CLASSIFICATION)) overrides[`ConVars/${key}`] = { value: pin.value };
         }
 
         // Reapplying or switching starts from a clean base, so the file always
@@ -890,18 +874,26 @@ export function setPerformanceConvarOverride(
     if (current.state !== 'applied' || !current.appliedPresetId) {
         return status('error', 'Apply a performance config before pinning a value.');
     }
+    const base = reapplyOptions(deadlockPath!, current);
+    if (typeof base === 'string') return status('error', base);
 
-    const normalized = key.trim().replace(/^ConVars\//, '');
-    if (!/^[A-Za-z_][\w.]*$/.test(normalized)) {
+    // Convar names are case-insensitive in game, and every ConVars key in
+    // gameinfo.gi is lowercase, so a pin is too. Otherwise `Fps_Max` would sit
+    // next to the preset's `fps_max` as a duplicate line.
+    const normalized = key.trim().replace(/^ConVars\//, '').toLowerCase();
+    if (!/^[a-z_][\w.]*$/.test(normalized) || normalized === '__proto__') {
         return status('error', 'Enter a convar name using letters, numbers, underscores or dots.');
     }
     if (keyExcluded(normalized, CLASSIFICATION)) {
         return status('error', `${normalized} is a convar Grimoire never writes and cannot be pinned.`);
     }
+    if (value !== null && nestedConvarNames(readFileSync(getGameinfoPath(deadlockPath!), 'utf-8')).has(normalized)) {
+        return status('error', `${normalized} is a block in gameinfo.gi or sits inside one, so it cannot be pinned.`);
+    }
 
     const preset = resolvePreset(current.appliedPresetId, current.appliedVersion);
     const isOptIn = preset.optIn.some((control) => control.key === normalized);
-    if (isOptIn && !(current.appliedOptIns ?? []).includes(normalized)) {
+    if (value !== null && isOptIn && !base.optIns.includes(normalized)) {
         return status(
             'error',
             `Turn on ${normalized} under the author's gameplay settings before pinning its value.`
@@ -913,21 +905,18 @@ export function setPerformanceConvarOverride(
         raw !== null && raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')
             ? raw.slice(1, -1)
             : raw;
-    if (pinned !== null && (!pinned || pinned.includes('//') || /[\r\n"]/.test(pinned))) {
-        return status('error', 'Enter a value without quotes, // or line breaks.');
+    if (pinned !== null && (!pinned || pinned.includes('//') || INVALID_PIN_VALUE.test(pinned))) {
+        return status('error', 'Enter a value without quotes, backslashes, braces, // or line breaks.');
     }
 
     return applyPerformanceConfig(deadlockPath, {
-        presetId: current.appliedPresetId,
-        version: current.appliedVersion,
-        optIns: current.appliedOptIns ?? [],
-        videoVariant: current.appliedVideoVariant ?? null,
-        pinnedUpdates: { [normalized]: { value: pinned } },
+        ...base,
+        pinnedUpdates: { [normalized]: pinned === null ? { value: null } : { value: pinned, enabled: true } },
     });
 }
 
 /** Switch a global pin on or off without losing its value. Turning it off
- *  restores the preset's own value in gameinfo.gi. */
+ *  brings back the per-preset value, or the preset's own one. */
 export function setPerformanceConvarOverrideEnabled(
     deadlockPath: string | null,
     key: string,
@@ -937,22 +926,69 @@ export function setPerformanceConvarOverrideEnabled(
     if (current.state !== 'applied' || !current.appliedPresetId) {
         return status('error', 'Apply a performance config before changing a pin.');
     }
+    const base = reapplyOptions(deadlockPath!, current);
+    if (typeof base === 'string') return status('error', base);
 
-    const normalized = key.trim().replace(/^ConVars\//, '');
-    if (!/^[A-Za-z_][\w.]*$/.test(normalized)) {
-        return status('error', 'Enter a convar name using letters, numbers, underscores or dots.');
-    }
-    if (!current.pinnedConvars?.[normalized]) {
+    const normalized = key.trim().replace(/^ConVars\//, '').toLowerCase();
+    if (!Object.hasOwn(current.pinnedConvars ?? {}, normalized)) {
         return status('error', `${normalized} is not pinned.`);
     }
 
-    return applyPerformanceConfig(deadlockPath, {
-        presetId: current.appliedPresetId,
-        version: current.appliedVersion,
-        optIns: current.appliedOptIns ?? [],
-        videoVariant: current.appliedVideoVariant ?? null,
-        pinnedUpdates: { [normalized]: { enabled } },
-    });
+    return applyPerformanceConfig(deadlockPath, { ...base, pinnedUpdates: { [normalized]: { enabled } } });
+}
+
+// Control characters, backslashes and braces would break the quoted value or
+// the file's block structure.
+// eslint-disable-next-line no-control-regex
+const INVALID_PIN_VALUE = /["\\{}\u0000-\u001f\u007f\u2028\u2029]/;
+
+/** What a pin change reapplies with: exactly the preset, release, opt-ins and
+ *  video.txt variant already in the file. A string is the reason it can't. */
+function reapplyOptions(
+    deadlockPath: string,
+    current: PerformanceConfigStatus
+): Required<Pick<ApplyOptions, 'presetId' | 'version' | 'optIns' | 'videoVariant'>> | string {
+    const presetId = current.appliedPresetId!;
+    const version = current.appliedVersion!;
+    const preset = resolvePreset(presetId, version);
+    // A track-latest release drops out of the cache once a newer one is
+    // fetched, and resolving it then falls back to a bundled release.
+    if (preset.version !== version) {
+        return `${preset.name} v${version} is no longer available. Apply the config again, then change the pin.`;
+    }
+    const gameinfoPath = getGameinfoPath(deadlockPath);
+    const sidecar = readAppliedState(gameinfoPath);
+    // Without a sidecar the file is the only record of which opt-ins are on.
+    const managed = sidecar ? null : managedConvarValues(readFileSync(gameinfoPath, 'utf-8').replace(/\r\n/g, '\n'));
+    const optIns = sidecar
+        ? (sidecar.optIns ?? [])
+        : preset.optIn.map((control) => control.key).filter((key) => managed![key] !== undefined);
+    return { presetId, version, optIns, videoVariant: current.appliedVideoVariant ?? null };
+}
+
+/** Names inside ConVars that are not plain top-level values: nested blocks
+ *  like `rate { min max }` and the keys inside them. Pinning one would inject
+ *  a stray line or rewrite every nested `max`. */
+function nestedConvarNames(text: string): Set<string> {
+    const content = text.replace(/\r\n/g, '\n');
+    const range = findSectionByPath(content, ['ConVars']);
+    const names = new Set<string>();
+    if (!range) return names;
+    let depth = 0;
+    for (const raw of content.slice(range.bodyStart, range.bodyEnd).split('\n')) {
+        const line = stripComment(raw);
+        const bare = /^[ \t]*"?([A-Za-z_][\w.]*)"?[ \t]*\{?[ \t]*$/.exec(line);
+        if (depth === 0 && bare) names.add(bare[1].toLowerCase());
+        if (depth > 0) {
+            const key = entryKey(line);
+            if (key) names.add(key.toLowerCase());
+        }
+        for (const ch of line) {
+            if (ch === '{') depth++;
+            else if (ch === '}') depth--;
+        }
+    }
+    return names;
 }
 
 function braceCount(content: string): number {
@@ -1333,7 +1369,7 @@ interface AppliedState {
     /** User-pinned convar values shared by every preset, and by every apply
      *  after a preset switch. Kept here (not in the per-preset map) so a value
      *  entered once follows the user across presets. */
-    pinnedConvars?: ConvarPins;
+    pinnedConvars?: PerformanceConvarPins;
     /** Set when the user removed the performance config but still has pins to
      *  keep. Presence of a sidecar normally means "wiped by a game update";
      *  this flag distinguishes an intentional removal. */
@@ -1382,7 +1418,7 @@ function writeAppliedState(
         contentHash: string;
         optIns: string[];
         overridesByPreset: Record<string, Overrides>;
-        pinnedConvars: ConvarPins;
+        pinnedConvars: PerformanceConvarPins;
         video: VideoRecord | null;
         videoVariant: string | null;
     }

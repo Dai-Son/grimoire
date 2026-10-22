@@ -3381,7 +3381,7 @@
       "cancel": "Cancel",
       "fileValue": "In file: {{value}}",
       "invalidKey": "Enter a convar name using letters, numbers, underscores or dots.",
-      "invalidValue": "Enter a value without quotes, // or line breaks.",
+      "invalidValue": "Enter a value without quotes, backslashes, braces, // or line breaks.",
       "failed": "Could not update the pinned value."
     },
     "source": "Source"
