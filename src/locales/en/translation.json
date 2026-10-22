@@ -3373,7 +3373,7 @@
       "keyPlaceholder": "r_shadows",
       "valuePlaceholder": "0",
       "pin": "Pin value",
-      "change": "Override",
+      "change": "Edit",
       "toggle": "Turn {{key}} pin on or off",
       "remove": "Remove",
       "removeHint": "Remove this pinned value",
